@@ -10,6 +10,7 @@ library(caret)
 library(modelr)
 library(glmnet)
 library(randomForest)
+library(gbm)
 
 set.seed(362)
 
@@ -91,3 +92,11 @@ pred_bag <- predict(model_bag, test)
 confusionMatrix(pred_bag, test$default)
 
 # Overall Accuracy of .7978
+
+##########
+# Boosting
+##########
+
+model_boost <- gbm(default ~ ., data = train, distribution = "bernoulli", n.trees = 5000, interaction.depth = 4)
+pred_boost <- predict(model_boost, newdata = test, n.trees = 5000)
+confusionMatrix(pred_boost, test$default)
