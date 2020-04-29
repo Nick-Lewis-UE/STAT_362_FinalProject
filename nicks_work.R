@@ -40,14 +40,15 @@ x_train <- model.matrix(default ~ ., train)[,-1]
 y_train <- train$default
 x_test <- model.matrix(default ~ ., test)[,-1]
 y_test <- test$default
-lasso <- cv.glmnet(x_train, y_train, alpha = 0, family = "binomial")
+lasso <- cv.glmnet(x_train, y_train, alpha = 1, family = "binomial")
 best_lambda <- lasso$lambda.min
 
-model_lasso <- glmnet(x_train, y_train, alpha = 0, family = "binomial",
-                lambda = best_lambda)
-pred_lasso <- predict(model_lasso, newx = x_test, type = "response")
+l_range <- 10^seq(10, -2, length = 100)
+model_lasso <- glmnet(x_train, y_train, alpha = 1, family = "binomial",
+                lambda = l_range)
+pred_lasso <- predict(model_lasso, s = best_lambda, newx = x_test, type = "response")
+pred_lasso <- ifelse(pred_lasso >= .5, 1, 0)
 lasso_coef <- predict(model_lasso, type = 'coefficients', s = best_lambda)
 
-# Model accuracy
-observed.classes <- test.data$diabetes
-mean(predicted.classes == observed.classes)
+# This model predicts all 1s, and i don't know why
+sum(pred_lasso != 1) # 0
