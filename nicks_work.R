@@ -1,11 +1,21 @@
 # I'm just playing around a little, investigating and such
+
+##########
+# Preamble
+##########
+
 library(tidyverse)
 library(GGally)
 library(caret)
 library(modelr)
 library(glmnet)
+library(randomForest)
 
 set.seed(362)
+
+######
+# Data
+######
 
 data <- read_csv("Data/final_train.csv", col_types = "dfffdddddddddddddf")
 compete <- read_csv("Data/final_compete.csv", col_types = "ddfffddddddddddddd")
@@ -14,6 +24,10 @@ train <- data %>%
   sample_frac(.7)
 test <- data %>%
   setdiff(train)
+
+###################
+# EDA (plot matrix)
+###################
 
 plot_matrix <- ggpairs(train)
 
@@ -36,6 +50,10 @@ plot_matrix[16,16]
 plot_matrix[17,17]
 plot_matrix[18,18]
 
+###########
+# LASSO/GLM
+###########
+
 x_train <- model.matrix(default ~ ., train)[,-1]
 y_train <- train$default
 x_test <- model.matrix(default ~ ., test)[,-1]
@@ -52,3 +70,24 @@ lasso_coef <- predict(model_lasso, type = 'coefficients', s = best_lambda)
 
 # This model predicts all 1s, and i don't know why
 sum(pred_lasso != 1) # 0
+
+
+###############
+# Random Forest
+###############
+
+model_rf <- randomForest(default ~ ., data = train, mtry = 4, ntree = 25, importance = TRUE)
+pred_rf <- predict(model_rf, test)
+confusionMatrix(pred_rf, test$default)
+
+# Overall Accuracy of .7985
+
+#########
+# Bagging
+#########
+
+model_bag <- randomForest(default ~ ., data = train, mtry = 17, ntree = 25, importance = TRUE)
+pred_bag <- predict(model_bag, test)
+confusionMatrix(pred_bag, test$default)
+
+# Overall Accuracy of .7978
