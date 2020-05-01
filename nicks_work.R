@@ -15,6 +15,20 @@ library(MASS)
 
 set.seed(362)
 
+pred_trivial <- train %>% group_by(default) %>%
+  tally() %>% mutate(proportion = n/sum(n)) %>%
+  .[2,c(1,3)] %>% pull()
+#to convert the factor default into a numeric to make it easier on the next line
+compete <- compete %>% mutate(default_num = as.numeric(as.character(default)))
+compete %>%
+  summarise(log_loss = -mean(default_num*log(pred_trivial) + (1-default_num)*log(1-pred_trivial)))
+
+log_loss <- function(t, error) {
+  t <- t %>% mutate(default_num = as.numeric(as.character(default)))
+  t %>%
+    summarise(log_loss = -mean(default_num*log(error) + (1-default_num)*log(1-error)))
+}
+
 ######
 # Data
 ######
@@ -107,6 +121,10 @@ lasso_coef <- predict(model_lasso, type = 'coefficients', s = best_lambda)
 # This model predicts all 1s, and i don't know why
 sum(pred_lasso != 1) # 0
 
+model_glm <- glm(default ~., data = train, family = binomial)
+pred_glm <- ifelse(predict(model_glm, test, type = "response") > .5, 1, 0)
+log_loss(test, confusionMatrix(as.factor(pred_glm), test$default)$overall["Accuracy"])
+
 
 ###############
 # Random Forest
@@ -134,8 +152,10 @@ for (i in 1:17) {
 
 # Best Accuracy 0.8043597 - not significantly different
 
-
-
+mod_rf_4 <- randomForest(default ~ ., data = train, mtry = 5, ntree = 50, importance = TRUE)
+pred_rf_4 <- predict(mod_rf_4, test)
+confusionMatrix(pred_rf_4, test$default)
+log_loss(test, 1-.8056)
 
 #########
 # Bagging
@@ -144,6 +164,7 @@ for (i in 1:17) {
 model_bag <- randomForest(default ~ ., data = train, mtry = 17, ntree = 25, importance = TRUE)
 pred_bag <- predict(model_bag, test)
 confusionMatrix(pred_bag, test$default)
+log_loss(test, 1-confusionMatrix(pred_bag, test$default)$overall["Accuracy"])
 
 # Overall Accuracy of .7978
 
@@ -151,6 +172,7 @@ model_bag_2 <- randomForest(default ~ ., data = train, mtry = 17, ntree = 250, i
 model_bag_3 <- randomForest(default ~ ., data = train, mtry = 17, ntree = 50, importance = TRUE)
 pred_bag_3 <- predict(model_bag_3, test)
 confusionMatrix(pred_bag_3, test$default)
+log_loss(test, 1-confusionMatrix(pred_bag_3, test$default)$overall["Accuracy"])
 
 # Overall Accuracy 0.8029 
 
@@ -165,9 +187,10 @@ test_2 <- test %>%
 
 model_boost_1 <- gbm(default ~ ., data = train_2, distribution = "bernoulli", shrinkage = .01, 
                    n.trees = 2000, interaction.depth = 4)
-pred_boost_1 <- predict(model_boost, newdata = test_2, n.trees = 2000, type = "response")
-pred_boost_1 <- ifelse(pred_boost >= .5, 1, 0)
+pred_boost_1 <- predict(model_boost_1, newdata = test_2, n.trees = 2000, type = "response")
+pred_boost_1 <- ifelse(pred_boost_1 >= .5, 1, 0)
 confusionMatrix(as.factor(pred_boost_1), test$default)
+log_loss(test, 1-confusionMatrix(as.factor(pred_boost_1), test$default)$overall["Accuracy"])
 
 # Overall Accuracy of .8074
 
@@ -184,13 +207,13 @@ confusionMatrix(as.factor(pred_boost_2), test$default)
 ##########
 
 train_partition <- createDataPartition(y = data$default, p=.7, list = FALSE)
-train <- data[train_partition,]
-test <- data[-train_partition,]
+train_cv <- data[train_partition,]
+test_cv <- data[-train_partition,]
 
 train_control_kfold <- trainControl(method = "cv", number = 10) # WARNING: WILL TAKE LONG
 
 model_kfold_rf <- train(default ~ ., data = train, trControl = train_control_kfold, method = "rf")
-mean(predict(model_kfold_rf, test) == test$default)
+log_loss(test, 1-confusionMatrix(predict(model_kfold_rf, test), test$default)$overall["Accuracy"])
 
 # Conclusion - not much different from models above
 
@@ -224,10 +247,14 @@ test_t <- data[-train_partition_t,]
 
 model_rf_t_1 <- randomForest(default ~ ., data = train_t, mtry = 4, ntree = 250, importance = TRUE)
 model_rf_t_2 <- randomForest(default ~ ., data = train_t, mtry = 4, ntree = 30, importance = TRUE)
+
+pred_rf_vec = vector(length = 17)
 for (i in 1:17) {
   mod <- randomForest(default ~ ., data = train_t, mtry = i, ntree = 30, importance = TRUE)
   pred_rf_vec[i] <- mean(predict(mod, test_t) == test_t$default)
 }
+
+# Best .802
 
 ########################
 # LDA w/ Transformations
