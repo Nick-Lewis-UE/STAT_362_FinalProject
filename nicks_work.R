@@ -24,9 +24,10 @@ compete %>%
   summarise(log_loss = -mean(default_num*log(pred_trivial) + (1-default_num)*log(1-pred_trivial)))
 
 log_loss <- function(t, error) {
-  t <- t %>% mutate(default_num = as.numeric(as.character(default)))
+  t <- t %>% 
+    mutate(default_num = as.numeric(as.character(default)))
   t %>%
-    summarise(log_loss = -mean(default_num*log(error) + (1-default_num)*log(1-error)))
+    summarise(log_loss = -mean(default_num*log(error) + (1-default_num)*log(1-error), na.rm = TRUE))
 }
 
 ######
@@ -147,7 +148,7 @@ confusionMatrix(pred_rf_3, test$default)
 pred_rf_vec = vector(length = 17)
 for (i in 1:17) {
   mod <- randomForest(default ~ ., data = train, mtry = i, ntree = 50, importance = TRUE)
-  pred_rf_vec[i] <- mean(predict(mod, test) == test$default)
+  pred_rf_vec[i] <- log_loss(test, predict(mod, test, type = "response"))#mean(predict(mod, test) == test$default)
 }
 
 # Best Accuracy 0.8043597 - not significantly different

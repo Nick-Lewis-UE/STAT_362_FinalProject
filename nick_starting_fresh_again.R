@@ -86,7 +86,8 @@ trainControl <- trainControl(method = "cv", number = 10)
 ###########
 
 ggplot(train) +
-  geom_density(mapping = aes(x = log(mean_pay), color = default))
+  geom_density(mapping = aes(x = pay_amt6/bill_amt6, color = default)) +#, position = "fill")
+  xlim(-5, 5)
 
 ggpairs(c(2,3,4,18), data = train)
 
@@ -161,5 +162,13 @@ confusionMatrix(pred_pca_lda, test_pca$default)
 
 # .7921
 
-log_loss(test_pca, 1-pred_pca_lda)
+log_loss(test_pca, pred_pca_lda)
+############################
 
+log_loss <- function(test, pred) {
+  test_pca <- test_pca %>% 
+    mutate(default_num = as.numeric(as.character(default))) %>%
+    cbind(pred_pca_lda)
+  test %>%
+    summarise(log_loss = -mean(default_num*log(as.numeric(as.character(pred_pca_lda))) + (default_num)*log(1-as.numeric(as.character(pred_pca_lda)))))
+}
