@@ -117,8 +117,9 @@ confusionMatrix(predict(model_lda_cv, test), test$default)
 model_glm <- glm(default ~., data = train_lda, family = "binomial")
 odds <- exp(predict(model_glm, test, type = "response"))
 prob <- odds/(1+odds)
-pred_glm <- ifelse(predict(model_glm, test, type = "response") >= .5, 1, 0)
+pred_glm <- predict(model_glm, test, type = "response")
 confusionMatrix(as.factor(pred_glm), test$default)
+log_loss(test, pred_glm)
 
 #####
 # PCA
