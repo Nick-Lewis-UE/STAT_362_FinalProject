@@ -169,6 +169,10 @@ train_control_kfold <- trainControl(method = "cv", number = 10) # WARNING: WILL 
 model_kfold_rf <- train(default ~ ., data = train, trControl = train_control_kfold, method = "rf")
 pred_rf_cv <- predict(model_kfold_rf, test, type = "prob")
 log_loss(test, pred_rf_cv[,1])
+model_kfold_rf$finalModel # mtry = 2, n.trees = 500
+model_final_cv_rf <- randomForest(default ~., data = train, mtry = 2, n.trees = 500)
+pred_final_rf_cv <- predict(model_final_cv_rf, test, type = "prob")
+log_loss(test, pred_final_rf_cv[,1])
 
 # Bagging
 
