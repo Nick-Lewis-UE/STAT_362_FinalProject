@@ -158,14 +158,14 @@ trainControl <- trainControl(method = "cv", number = 10)
 # Building the Models
 #####################
 
-# Train RF using the Caret package
+# Train RF using the Caret package - WARNING: TAKES A LONG TIME
 model_kfold_rf <- train(default ~ ., data = train, trControl = train_control_kfold, method = "rf")
 
 # Extract final model and note the build
 model_kfold_rf$finalModel # mtry = 2, n.trees = 500
 
 # Reproduce this model for the sake of time
-model_final_cv_rf <- randomForest(default ~., data = train, mtry = 2, n.trees = 500)
+model_final_cv_rf <- randomForest(default ~., data = train, mtry = 2, n.trees = 500) # model 1
 
 ###############################
 # Testing the Model and Results
