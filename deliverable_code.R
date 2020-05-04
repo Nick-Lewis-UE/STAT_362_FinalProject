@@ -4,8 +4,24 @@
 
 library(tidyverse)
 library(GGally)
+library(caret)
+library(modelr)
+library(glmnet)
+library(randomForest)
+library(gbm)
+library(MASS)
+library(gam)
 
 set.seed(362)
+
+log_loss <- function(t, pred) {
+  pred <- ifelse(pred == 0, exp(-10), pred)
+  pred <- ifelse(pred == 1, .99999999999, pred)
+  t <- t %>% 
+    mutate(default_num = as.numeric(as.character(default)))
+  t %>%
+    summarise(log_loss = -mean(default_num*log(pred) + (1-default_num)*log(1-pred)))
+}
 
 #################################
 # Loading and Processing the Data
@@ -13,7 +29,7 @@ set.seed(362)
 
 # Read in Data
 train <- read_csv("Data/final_train.csv", col_types = "dfffdddddddddddddf")
-compete <- read_csv("Data/final_compete.csv", col_types = "dfffddddddddddddd")
+compete <- read_csv("Data/final_compete.csv", col_types = "ddfffddddddddddddd")
 
 # Process Train Data for Random Forest
 data <- read_csv("Data/final_train.csv", col_types = "dfffdddddddddddddf") %>%
@@ -31,6 +47,12 @@ data <- read_csv("Data/final_train.csv", col_types = "dfffdddddddddddddf") %>%
          log_pay_amt4 = ifelse(pay_amt4 != 0, log(pay_amt4), log(.01)),
          log_pay_amt5 = ifelse(pay_amt5 != 0, log(pay_amt5), log(.01)),
          log_pay_amt6 = ifelse(pay_amt6 != 0, log(pay_amt6), log(.01))) %>%
+  # mutate(nobills = as.factor(ifelse(bill_amt1 == 0 &
+  #          bill_amt2 == 0 &
+  #          bill_amt3 == 0 &
+  #          bill_amt4 == 0 &
+  #          bill_amt5 == 0 &
+  #          bill_amt6 == 0, 1, 0))) %>%
   filter(!is.nan(log_bill_amt1) &
            !is.nan(log_bill_amt2) &
            !is.nan(log_bill_amt3) &
@@ -110,6 +132,7 @@ compete <- read_csv("Data/final_compete.csv", col_types = "ddfffddddddddddddd") 
          bw_27_40 = as.factor(ifelse(age >= 27 & age < 40, 1, 0)),
          bw_40_55 = as.factor(ifelse(age >= 40 & age < 55, 1, 0)),
          above_55 = as.factor(ifelse(age >= 55, 1, 0))) %>%
+  dplyr::select(-age) %>%
   mutate(high_pay = as.factor(ifelse(log(mean_pay) >= 8, 1, 0)),
          low_pay = as.factor(ifelse(log(mean_pay) < 8, 1, 0))) %>%
   mutate(low_limit = as.factor(ifelse(limit_bal < 1.25e5, 1, 0)),
@@ -118,7 +141,7 @@ compete <- read_csv("Data/final_compete.csv", col_types = "ddfffddddddddddddd") 
   mutate(no_bills = as.factor(ifelse(bill_amt1+bill_amt2+bill_amt3+bill_amt4+bill_amt5+bill_amt6 == 0, 1, 0)),
          no_pay = as.factor(ifelse(pay_amt1+pay_amt2+pay_amt3+pay_amt4+pay_amt5+pay_amt6 == 0, 1, 0))) %>%
   dplyr::select(-bill_amt1, -bill_amt2, -bill_amt3, -bill_amt4, -bill_amt5, -bill_amt6,
-                -pay_amt1, -pay_amt2, -pay_amt3, -pay_amt4, -pay_amt5, -pay_amt6)
+                -pay_amt1, -pay_amt2, -pay_amt3, -pay_amt4, -pay_amt5, -pay_amt6) 
 
 # Divide up for CV for RF
 train <- data %>%
@@ -126,6 +149,8 @@ train <- data %>%
 test <- data %>%
   setdiff(train)
 train <- train %>%
+  filter(!is.infinite(perc_paid3))
+test <- test %>%
   filter(!is.infinite(perc_paid3))
 trainControl <- trainControl(method = "cv", number = 10)
 
@@ -159,7 +184,7 @@ log_loss(test, pred_final_rf_cv[,1])
 ############
 
 # Deploy for Random Forest
-compete_pred <- predict(pred_final_rf_cv, compete, type = "prob")[,1]
+compete_pred <- predict(model_final_cv_rf, compete, type = "prob")[,1]
 compete_pred <- data.frame(ID = 1:length(compete_pred),
                            probs = compete_pred)
 write_csv(compete_pred, "compete_preds_1.csv")
