@@ -176,7 +176,7 @@ log_loss(test, pred_final_rf_cv[,1])
 
 # Bagging
 
-model_bag <- randomForest(default ~ ., data = train, mtry = 17, ntree = 25, importance = TRUE)
+model_bag <- randomForest(default ~ ., data = train, mtry = 36, ntree = 25, importance = TRUE)
 pred_bag <- predict(model_bag, test, type = "prob")
 confusionMatrix(pred_bag, test$default)
 log_loss(test, pred_bag)
