@@ -35,12 +35,18 @@ compete <- read_csv("Data/final_compete.csv", col_types = "ddfffddddddddddddd")
 data <- read_csv("Data/final_train.csv", col_types = "dfffdddddddddddddf") %>%
   mutate(log_limit_bal = log(limit_bal),
          log_age = log(age),
-         log_bill_amt1 = ifelse(bill_amt1 != 0, log(bill_amt1), log(.01)),
-         log_bill_amt2 = ifelse(bill_amt2 != 0, log(bill_amt2), log(.01)),
-         log_bill_amt3 = ifelse(bill_amt3 != 0, log(bill_amt3), log(.01)),
-         log_bill_amt4 = ifelse(bill_amt4 != 0, log(bill_amt4), log(.01)),
-         log_bill_amt5 = ifelse(bill_amt5 != 0, log(bill_amt5), log(.01)),
-         log_bill_amt6 = ifelse(bill_amt6 != 0, log(bill_amt6), log(.01)),
+         log_bill_amt1 = ifelse(bill_amt1 > 0, log(bill_amt1), 
+                                ifelse(bill_amt1 == 0, log(.01), -log(abs(bill_amt1)))),
+         log_bill_amt2 = ifelse(bill_amt2 > 0, log(bill_amt2), 
+                                ifelse(bill_amt2 == 0, log(.01), -log(abs(bill_amt2)))),
+         log_bill_amt3 = ifelse(bill_amt3 > 0, log(bill_amt3), 
+                                ifelse(bill_amt3 == 0, log(.01), -log(abs(bill_amt3)))),
+         log_bill_amt4 = ifelse(bill_amt4 > 0, log(bill_amt4), 
+                                ifelse(bill_amt4 == 0, log(.01), -log(abs(bill_amt4)))),
+         log_bill_amt5 = ifelse(bill_amt5 > 0, log(bill_amt5), 
+                                ifelse(bill_amt5 == 0, log(.01), -log(abs(bill_amt5)))),
+         log_bill_amt6 = ifelse(bill_amt6 > 0, log(bill_amt6), 
+                                ifelse(bill_amt6 == 0, log(.01), -log(abs(bill_amt6)))),
          log_pay_amt1 = ifelse(pay_amt1 != 0, log(pay_amt1), log(.01)),
          log_pay_amt2 = ifelse(pay_amt2 != 0, log(pay_amt2), log(.01)),
          log_pay_amt3 = ifelse(pay_amt3 != 0, log(pay_amt3), log(.01)),
@@ -65,15 +71,16 @@ data <- read_csv("Data/final_train.csv", col_types = "dfffdddddddddddddf") %>%
            !is.infinite(log_bill_amt4) &
            !is.infinite(log_bill_amt5) &
            !is.infinite(log_bill_amt6)) %>%
-  mutate(perc_paid1 = log_pay_amt1/log_bill_amt1,
-         perc_paid2 = log_pay_amt2/log_bill_amt2,
-         perc_paid3 = log_pay_amt3/log_bill_amt3,
-         perc_paid4 = log_pay_amt4/log_bill_amt4,
-         perc_paid5 = log_pay_amt5/log_bill_amt5,
-         perc_paid6 = log_pay_amt6/log_bill_amt6) %>%
+  mutate(perc_paid1 = ifelse(log_bill_amt1 != 0, log_pay_amt1/log_bill_amt1, log_pay_amt1/.01),
+         perc_paid2 = ifelse(log_bill_amt2 != 0, log_pay_amt2/log_bill_amt2, log_pay_amt1/.01),
+         perc_paid3 = ifelse(log_bill_amt3 != 0, log_pay_amt3/log_bill_amt3, log_pay_amt1/.01),
+         perc_paid4 = ifelse(log_bill_amt4 != 0, log_pay_amt4/log_bill_amt4, log_pay_amt1/.01),
+         perc_paid5 = ifelse(log_bill_amt5 != 0, log_pay_amt5/log_bill_amt5, log_pay_amt1/.01),
+         perc_paid6 = ifelse(log_bill_amt6 != 0, log_pay_amt6/log_bill_amt6, log_pay_amt1/.01)) %>%
   mutate(mean_bill = (bill_amt1+bill_amt2+bill_amt3+bill_amt4+bill_amt5+bill_amt6)/6,
          mean_pay = (pay_amt1+pay_amt2+pay_amt3+pay_amt4+pay_amt5+pay_amt6)/6) %>%
-  mutate(log_mean_bill = ifelse(mean_bill != 0, log(mean_bill), log(.001)),
+  mutate(log_mean_bill = ifelse(mean_bill > 0, log(mean_bill), 
+                                ifelse(mean_bill == 0, log(.01), -log(abs(mean_bill)))),
          log_mean_pay = ifelse(mean_pay != 0, log(mean_pay), log(.01))) %>%
   mutate(under_27 = as.factor(ifelse(age < 27, 1, 0)),
          bw_27_40 = as.factor(ifelse(age >= 27 & age < 40, 1, 0)),
@@ -94,18 +101,30 @@ data <- read_csv("Data/final_train.csv", col_types = "dfffdddddddddddddf") %>%
 compete <- read_csv("Data/final_compete.csv", col_types = "ddfffddddddddddddd") %>%
   mutate(log_limit_bal = log(limit_bal),
          log_age = log(age),
-         log_bill_amt1 = ifelse(bill_amt1 != 0, log(bill_amt1), log(.01)),
-         log_bill_amt2 = ifelse(bill_amt2 != 0, log(bill_amt2), log(.01)),
-         log_bill_amt3 = ifelse(bill_amt3 != 0, log(bill_amt3), log(.01)),
-         log_bill_amt4 = ifelse(bill_amt4 != 0, log(bill_amt4), log(.01)),
-         log_bill_amt5 = ifelse(bill_amt5 != 0, log(bill_amt5), log(.01)),
-         log_bill_amt6 = ifelse(bill_amt6 != 0, log(bill_amt6), log(.01)),
+         log_bill_amt1 = ifelse(bill_amt1 > 0, log(bill_amt1), 
+                                ifelse(bill_amt1 == 0, log(.01), -log(abs(bill_amt1)))),
+         log_bill_amt2 = ifelse(bill_amt2 > 0, log(bill_amt2), 
+                                ifelse(bill_amt2 == 0, log(.01), -log(abs(bill_amt2)))),
+         log_bill_amt3 = ifelse(bill_amt3 > 0, log(bill_amt3), 
+                                ifelse(bill_amt3 == 0, log(.01), -log(abs(bill_amt3)))),
+         log_bill_amt4 = ifelse(bill_amt4 > 0, log(bill_amt4), 
+                                ifelse(bill_amt4 == 0, log(.01), -log(abs(bill_amt4)))),
+         log_bill_amt5 = ifelse(bill_amt5 > 0, log(bill_amt5), 
+                                ifelse(bill_amt5 == 0, log(.01), -log(abs(bill_amt5)))),
+         log_bill_amt6 = ifelse(bill_amt6 > 0, log(bill_amt6), 
+                                ifelse(bill_amt6 == 0, log(.01), -log(abs(bill_amt6)))),
          log_pay_amt1 = ifelse(pay_amt1 != 0, log(pay_amt1), log(.01)),
          log_pay_amt2 = ifelse(pay_amt2 != 0, log(pay_amt2), log(.01)),
          log_pay_amt3 = ifelse(pay_amt3 != 0, log(pay_amt3), log(.01)),
          log_pay_amt4 = ifelse(pay_amt4 != 0, log(pay_amt4), log(.01)),
          log_pay_amt5 = ifelse(pay_amt5 != 0, log(pay_amt5), log(.01)),
          log_pay_amt6 = ifelse(pay_amt6 != 0, log(pay_amt6), log(.01))) %>%
+  # mutate(nobills = as.factor(ifelse(bill_amt1 == 0 &
+  #          bill_amt2 == 0 &
+  #          bill_amt3 == 0 &
+  #          bill_amt4 == 0 &
+  #          bill_amt5 == 0 &
+  #          bill_amt6 == 0, 1, 0))) %>%
   filter(!is.nan(log_bill_amt1) &
            !is.nan(log_bill_amt2) &
            !is.nan(log_bill_amt3) &
@@ -118,15 +137,16 @@ compete <- read_csv("Data/final_compete.csv", col_types = "ddfffddddddddddddd") 
            !is.infinite(log_bill_amt4) &
            !is.infinite(log_bill_amt5) &
            !is.infinite(log_bill_amt6)) %>%
-  mutate(perc_paid1 = log_pay_amt1/log_bill_amt1,
-         perc_paid2 = log_pay_amt2/log_bill_amt2,
-         perc_paid3 = log_pay_amt3/log_bill_amt3,
-         perc_paid4 = log_pay_amt4/log_bill_amt4,
-         perc_paid5 = log_pay_amt5/log_bill_amt5,
-         perc_paid6 = log_pay_amt6/log_bill_amt6) %>%
+  mutate(perc_paid1 = ifelse(log_bill_amt1 != 0, log_pay_amt1/log_bill_amt1, log_pay_amt1/.01),
+         perc_paid2 = ifelse(log_bill_amt2 != 0, log_pay_amt2/log_bill_amt2, log_pay_amt1/.01),
+         perc_paid3 = ifelse(log_bill_amt3 != 0, log_pay_amt3/log_bill_amt3, log_pay_amt1/.01),
+         perc_paid4 = ifelse(log_bill_amt4 != 0, log_pay_amt4/log_bill_amt4, log_pay_amt1/.01),
+         perc_paid5 = ifelse(log_bill_amt5 != 0, log_pay_amt5/log_bill_amt5, log_pay_amt1/.01),
+         perc_paid6 = ifelse(log_bill_amt6 != 0, log_pay_amt6/log_bill_amt6, log_pay_amt1/.01)) %>%
   mutate(mean_bill = (bill_amt1+bill_amt2+bill_amt3+bill_amt4+bill_amt5+bill_amt6)/6,
          mean_pay = (pay_amt1+pay_amt2+pay_amt3+pay_amt4+pay_amt5+pay_amt6)/6) %>%
-  mutate(log_mean_bill = ifelse(mean_bill != 0, log(mean_bill), log(.001)),
+  mutate(log_mean_bill = ifelse(mean_bill > 0, log(mean_bill), 
+                                ifelse(mean_bill == 0, log(.01), -log(abs(mean_bill)))),
          log_mean_pay = ifelse(mean_pay != 0, log(mean_pay), log(.01))) %>%
   mutate(under_27 = as.factor(ifelse(age < 27, 1, 0)),
          bw_27_40 = as.factor(ifelse(age >= 27 & age < 40, 1, 0)),
@@ -141,7 +161,7 @@ compete <- read_csv("Data/final_compete.csv", col_types = "ddfffddddddddddddd") 
   mutate(no_bills = as.factor(ifelse(bill_amt1+bill_amt2+bill_amt3+bill_amt4+bill_amt5+bill_amt6 == 0, 1, 0)),
          no_pay = as.factor(ifelse(pay_amt1+pay_amt2+pay_amt3+pay_amt4+pay_amt5+pay_amt6 == 0, 1, 0))) %>%
   dplyr::select(-bill_amt1, -bill_amt2, -bill_amt3, -bill_amt4, -bill_amt5, -bill_amt6,
-                -pay_amt1, -pay_amt2, -pay_amt3, -pay_amt4, -pay_amt5, -pay_amt6) 
+                -pay_amt1, -pay_amt2, -pay_amt3, -pay_amt4, -pay_amt5, -pay_amt6)
 
 # Divide up for CV for RF
 train <- data %>%
