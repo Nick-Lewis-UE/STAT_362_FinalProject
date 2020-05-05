@@ -174,6 +174,24 @@ test <- test %>%
   filter(!is.infinite(perc_paid3))
 trainControl <- trainControl(method = "cv", number = 10)
 
+# Create Data for PCA
+pca_data <- read_csv("Data/final_train.csv", col_types = "dfffdddddddddddddf") %>%
+  dplyr::select(bill_amt1, bill_amt2, bill_amt3, bill_amt4, bill_amt5, bill_amt6,
+                pay_amt1, pay_amt2, pay_amt3, pay_amt4, pay_amt5, pay_amt6)
+pca <- prcomp(pca_data, center = TRUE, scale = TRUE) # prcomp() performs PCA
+
+data_pca <- read_csv("Data/final_train.csv", col_types = "dfffdddddddddddddf") %>%
+  cbind(pca$x[,1], pca$x[,2]) %>% # add the PCA features
+  dplyr::select(-bill_amt1, -bill_amt2, -bill_amt3, -bill_amt4, -bill_amt5, -bill_amt6,
+                -pay_amt1, -pay_amt2, -pay_amt3, -pay_amt4, -pay_amt5, -pay_amt6) # remove old features
+
+names(data_pca)[7] <- "comp1" # rename pca column 1
+names(data_pca)[8] <- "comp2" # "               "
+train_pca <- data_pca %>%
+  sample_frac(.7)
+test_pca <- data_pca %>%
+  setdiff(train_pca)
+
 #####################
 # Building the Models
 #####################
@@ -187,17 +205,24 @@ model_kfold_rf$finalModel # mtry = 2, n.trees = 500
 # Reproduce this model for the sake of time
 model_final_cv_rf <- randomForest(default ~., data = train, mtry = 2, n.trees = 500) # model 1
 
+# Train LDA using the Caret package and PCA data
+model_pca_lda <- train(default ~., data = train_pca, method = "lda")
+
 ###############################
 # Testing the Model and Results
 ###############################
 
 # make predictions from CV random forest
 pred_rf_cv <- predict(model_kfold_rf, test, type = "prob")
-log_loss(test, pred_rf_cv[,1])
+log_loss(test, pred_rf_cv[,1]) # ~0.455
 
-# make predictions from final model extraction
+# make predictions from RF final model extraction
 pred_final_rf_cv <- predict(model_final_cv_rf, test, type = "prob")
-log_loss(test, pred_final_rf_cv[,1])
+log_loss(test, pred_final_rf_cv[,1]) # ~0.455
+
+# Make predictions from the CV PCA LDA
+pred_pca_lda <- predict(model_pca_lda, test_pca, type = "prob")
+log_loss(test_pca, pred_pca_lda[,1]) # ~0.477
 
 ############
 # Deployment
