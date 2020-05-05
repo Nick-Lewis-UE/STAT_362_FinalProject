@@ -208,6 +208,16 @@ model_final_cv_rf <- randomForest(default ~., data = train, mtry = 2, n.trees = 
 # Train LDA using the Caret package and PCA data
 model_pca_lda <- train(default ~., data = train_pca, method = "lda")
 
+
+# LDA - SAM
+#All-subsets variable selection
+model_subset <- regsubsets(default ~ ., nbest = 3, data = train)
+plot(model_subset)
+#Optimal variables: log_limit_bal, log_bill_amt2, log_bill_amt3, log_pay_amt1, log_pay_amt2)
+#Using optimal variables from all-subsets selection
+model_lda <- lda(default ~ log_limit_bal + log_bill_amt2 + log_bill_amt3 + log_pay_amt1 + log_pay_amt2 , data = train)
+
+
 ###############################
 # Testing the Model and Results
 ###############################
@@ -224,6 +234,11 @@ log_loss(test, pred_final_rf_cv[,1]) # ~0.455
 pred_pca_lda <- predict(model_pca_lda, test_pca, type = "prob")
 log_loss(test_pca, pred_pca_lda[,1]) # ~0.477
 
+# Make predictions from LDA - SAM
+prob_lda <- predict(model_lda, newdata = test)
+prob_lda_prob <- prob_lda$posterior[1:7343]
+log_loss(test, prob_lda_prob)
+
 ############
 # Deployment
 ############
@@ -233,3 +248,11 @@ compete_pred <- predict(model_final_cv_rf, compete, type = "prob")[,1]
 compete_pred <- data.frame(ID = 1:length(compete_pred),
                            probs = compete_pred)
 write_csv(compete_pred, "compete_preds_1.csv")
+
+# Deploy for LDA - SAM
+compete_pred_lda <- predict(model_lda, compete, type = "response")
+prob_lda_compete <- compete_pred_lda$posterior[1:4326]
+compete_pred_lda_final <- data.frame(ID = 1:4326,
+                           probs = prob_lda_compete)
+write_csv(compete_pred_lda_final, "compete_preds_2_lda.csv")
+
