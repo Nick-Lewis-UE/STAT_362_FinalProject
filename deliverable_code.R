@@ -27,10 +27,6 @@ log_loss <- function(t, pred) {
 # Loading and Processing the Data
 #################################
 
-# Read in Data
-train <- read_csv("Data/final_train.csv", col_types = "dfffdddddddddddddf")
-compete <- read_csv("Data/final_compete.csv", col_types = "ddfffddddddddddddd")
-
 # Process Train Data for Random Forest
 data <- read_csv("Data/final_train.csv", col_types = "dfffdddddddddddddf") %>%
   mutate(log_limit_bal = log(limit_bal),
@@ -59,18 +55,6 @@ data <- read_csv("Data/final_train.csv", col_types = "dfffdddddddddddddf") %>%
   #          bill_amt4 == 0 &
   #          bill_amt5 == 0 &
   #          bill_amt6 == 0, 1, 0))) %>%
-  filter(!is.nan(log_bill_amt1) &
-           !is.nan(log_bill_amt2) &
-           !is.nan(log_bill_amt3) &
-           !is.nan(log_bill_amt4) &
-           !is.nan(log_bill_amt5) &
-           !is.nan(log_bill_amt6) &
-           !is.infinite(log_bill_amt1) &
-           !is.infinite(log_bill_amt2) &
-           !is.infinite(log_bill_amt3) &
-           !is.infinite(log_bill_amt4) &
-           !is.infinite(log_bill_amt5) &
-           !is.infinite(log_bill_amt6)) %>%
   mutate(perc_paid1 = ifelse(log_bill_amt1 != 0, log_pay_amt1/log_bill_amt1, log_pay_amt1/.01),
          perc_paid2 = ifelse(log_bill_amt2 != 0, log_pay_amt2/log_bill_amt2, log_pay_amt1/.01),
          perc_paid3 = ifelse(log_bill_amt3 != 0, log_pay_amt3/log_bill_amt3, log_pay_amt1/.01),
@@ -125,18 +109,6 @@ compete <- read_csv("Data/final_compete.csv", col_types = "ddfffddddddddddddd") 
   #          bill_amt4 == 0 &
   #          bill_amt5 == 0 &
   #          bill_amt6 == 0, 1, 0))) %>%
-  filter(!is.nan(log_bill_amt1) &
-           !is.nan(log_bill_amt2) &
-           !is.nan(log_bill_amt3) &
-           !is.nan(log_bill_amt4) &
-           !is.nan(log_bill_amt5) &
-           !is.nan(log_bill_amt6) &
-           !is.infinite(log_bill_amt1) &
-           !is.infinite(log_bill_amt2) &
-           !is.infinite(log_bill_amt3) &
-           !is.infinite(log_bill_amt4) &
-           !is.infinite(log_bill_amt5) &
-           !is.infinite(log_bill_amt6)) %>%
   mutate(perc_paid1 = ifelse(log_bill_amt1 != 0, log_pay_amt1/log_bill_amt1, log_pay_amt1/.01),
          perc_paid2 = ifelse(log_bill_amt2 != 0, log_pay_amt2/log_bill_amt2, log_pay_amt1/.01),
          perc_paid3 = ifelse(log_bill_amt3 != 0, log_pay_amt3/log_bill_amt3, log_pay_amt1/.01),
@@ -186,7 +158,7 @@ data_pca <- read_csv("Data/final_train.csv", col_types = "dfffdddddddddddddf") %
                 -pay_amt1, -pay_amt2, -pay_amt3, -pay_amt4, -pay_amt5, -pay_amt6) # remove old features
 
 names(data_pca)[7] <- "comp1" # rename pca column 1
-names(data_pca)[8] <- "comp2" # "               "
+names(data_pca)[8] <- "comp2" # "               " 2
 train_pca <- data_pca %>%
   sample_frac(.7)
 test_pca <- data_pca %>%
