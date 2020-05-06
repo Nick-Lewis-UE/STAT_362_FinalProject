@@ -49,12 +49,6 @@ data <- read_csv("Data/final_train.csv", col_types = "dfffdddddddddddddf") %>%
          log_pay_amt4 = ifelse(pay_amt4 != 0, log(pay_amt4), log(.01)),
          log_pay_amt5 = ifelse(pay_amt5 != 0, log(pay_amt5), log(.01)),
          log_pay_amt6 = ifelse(pay_amt6 != 0, log(pay_amt6), log(.01))) %>%
-  # mutate(nobills = as.factor(ifelse(bill_amt1 == 0 &
-  #          bill_amt2 == 0 &
-  #          bill_amt3 == 0 &
-  #          bill_amt4 == 0 &
-  #          bill_amt5 == 0 &
-  #          bill_amt6 == 0, 1, 0))) %>%
   mutate(perc_paid1 = ifelse(log_bill_amt1 != 0, log_pay_amt1/log_bill_amt1, log_pay_amt1/.01),
          perc_paid2 = ifelse(log_bill_amt2 != 0, log_pay_amt2/log_bill_amt2, log_pay_amt1/.01),
          perc_paid3 = ifelse(log_bill_amt3 != 0, log_pay_amt3/log_bill_amt3, log_pay_amt1/.01),
@@ -103,12 +97,6 @@ compete <- read_csv("Data/final_compete.csv", col_types = "ddfffddddddddddddd") 
          log_pay_amt4 = ifelse(pay_amt4 != 0, log(pay_amt4), log(.01)),
          log_pay_amt5 = ifelse(pay_amt5 != 0, log(pay_amt5), log(.01)),
          log_pay_amt6 = ifelse(pay_amt6 != 0, log(pay_amt6), log(.01))) %>%
-  # mutate(nobills = as.factor(ifelse(bill_amt1 == 0 &
-  #          bill_amt2 == 0 &
-  #          bill_amt3 == 0 &
-  #          bill_amt4 == 0 &
-  #          bill_amt5 == 0 &
-  #          bill_amt6 == 0, 1, 0))) %>%
   mutate(perc_paid1 = ifelse(log_bill_amt1 != 0, log_pay_amt1/log_bill_amt1, log_pay_amt1/.01),
          perc_paid2 = ifelse(log_bill_amt2 != 0, log_pay_amt2/log_bill_amt2, log_pay_amt1/.01),
          perc_paid3 = ifelse(log_bill_amt3 != 0, log_pay_amt3/log_bill_amt3, log_pay_amt1/.01),
@@ -176,6 +164,12 @@ model_kfold_rf$finalModel # mtry = 2, n.trees = 500
 
 # Reproduce this model for the sake of time
 model_final_cv_rf <- randomForest(default ~., data = train, mtry = 2, n.trees = 500) # model 1
+
+# Remove the low importance variables
+new_train <- train %>% 
+  dplyr::select(-no_pay, -no_bills, -high_limit, -low_limit, -low_pay, 
+                -high_pay, -above_55, -bw_40_55, -bw_27_40, -under_27)
+model_final_cv_rf <- randomForest(default ~., data = new_train, mtry = 2, n.trees = 500) # model 3
 
 # Train LDA using the Caret package and PCA data
 model_pca_lda <- train(default ~., data = train_pca, method = "lda")
