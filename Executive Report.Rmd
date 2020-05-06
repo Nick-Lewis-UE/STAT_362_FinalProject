@@ -1,0 +1,527 @@
+---
+title: "Executive Report"
+author: "Nicholas Lewis"
+date: "5/5/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(fig.height = 3)
+library(tidyverse)
+library(ggthemes)
+library(caret)
+library(randomForest)
+custom_theme <- theme_economist_white() +
+  theme(axis.title.x = element_text(face = "bold"),
+        axis.title.y = element_text(face = "bold"),
+        plot.title = element_text(hjust = .5, vjust = .5))
+set.seed(362)
+
+log_loss <- function(t, pred) {
+  pred <- ifelse(pred == 0, exp(-10), pred)
+  pred <- ifelse(pred == 1, .99999999999, pred)
+  t <- t %>% 
+    mutate(default_num = as.numeric(as.character(default)))
+  t %>%
+    summarise(log_loss = -mean(default_num*log(pred) + (1-default_num)*log(1-pred)))
+}
+```
+
+```{r read_data, warning = FALSE}
+data_eda <- read_csv("Data/final_train.csv", col_types = "dfffdddddddddddddf") %>%
+  mutate(log_limit_bal = log(limit_bal),
+         log_age = log(age),
+         log_bill_amt1 = ifelse(bill_amt1 > 0, log(bill_amt1), 
+                                ifelse(bill_amt1 == 0, log(.01), -log(abs(bill_amt1)))),
+         log_bill_amt2 = ifelse(bill_amt2 > 0, log(bill_amt2), 
+                                ifelse(bill_amt2 == 0, log(.01), -log(abs(bill_amt2)))),
+         log_bill_amt3 = ifelse(bill_amt3 > 0, log(bill_amt3), 
+                                ifelse(bill_amt3 == 0, log(.01), -log(abs(bill_amt3)))),
+         log_bill_amt4 = ifelse(bill_amt4 > 0, log(bill_amt4), 
+                                ifelse(bill_amt4 == 0, log(.01), -log(abs(bill_amt4)))),
+         log_bill_amt5 = ifelse(bill_amt5 > 0, log(bill_amt5), 
+                                ifelse(bill_amt5 == 0, log(.01), -log(abs(bill_amt5)))),
+         log_bill_amt6 = ifelse(bill_amt6 > 0, log(bill_amt6), 
+                                ifelse(bill_amt6 == 0, log(.01), -log(abs(bill_amt6)))),
+         log_pay_amt1 = ifelse(pay_amt1 != 0, log(pay_amt1), log(.01)),
+         log_pay_amt2 = ifelse(pay_amt2 != 0, log(pay_amt2), log(.01)),
+         log_pay_amt3 = ifelse(pay_amt3 != 0, log(pay_amt3), log(.01)),
+         log_pay_amt4 = ifelse(pay_amt4 != 0, log(pay_amt4), log(.01)),
+         log_pay_amt5 = ifelse(pay_amt5 != 0, log(pay_amt5), log(.01)),
+         log_pay_amt6 = ifelse(pay_amt6 != 0, log(pay_amt6), log(.01)))
+train_eda <- data_eda %>%
+  dplyr::sample_frac(.7)
+test_eda <- data_eda %>%
+  setdiff(train_eda)
+```
+
+## Introduction
+
+## Data Processing
+
+We first partitioned the data into two distinct sets: a training set and a testing set. The training data was used for all EDA and model building. Reported performance measures were calculated on the testing data.
+
+Exploratory Data Analysis (EDA) and initial modelling attempts quickly illustrate the need for new features and transformation of existing features. First, simple density plots of the features ‘bill_amt1’, …, ‘bill_amt6’, and ‘pay_amt1’, …, ‘pay_amt6’ as well as age and balance limit are clearly not normally distributed. Logarithmic transformations are also taken in order to remedy this issue. There are several cases in which this transformation is problematic, however, since both the billing features and payment features contain zero values and bill amounts may also be negative. A slightly more complex version of this transformation is included below.
+
+\begin{equation}
+F(x) = 
+\begin{cases} 
+\log{(x)} & \text{if } x > 0 \\
+\log{.01} & \text{if } x = 0 \\
+-\log{|x|} & \text{if } x < 0 
+\end{cases}
+\end{equation}
+
+
+The transformation is illustrated graphically below for ‘bill_amt1’. All plots illustrating this transformation are included in Appendix -. It far from a perfect normal distribution even after the transformation, which may present issues with modelling techniques that assume normality.
+
+
+```{r log_transform_bill_amt_1, fig.height=3}
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = bill_amt1), size = 1) +
+  xlab("Billing Amount 1") +
+  ylab("") +
+  ggtitle("Original Distribution", subtitle = "") +
+  custom_theme
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = log_bill_amt1), size = 1) +
+  xlab("Transformed Billing Amount 1") +
+  ylab("") +
+  ggtitle("Transformed Distribution", subtitle = "") +
+  custom_theme
+```
+
+Next, we create variables denoting the percent paid for each month. Intuitively, this ratio may be more influential than the billing and payment amount are separately. The plot below, as well as the rest of the family of plots included in Appendix B, illustrates that there is some sort of relationship between these two, but that observations who do not default do not adhere to this relationship very strongly. The noise extends above the top of this graph for those who do not default.
+
+```{r bill_pay_relationship, fig.height=3, warning = FALSE}
+ggplot(train_eda) +
+  geom_point(mapping = aes(x = log_bill_amt1, y = log_pay_amt1, color = default)) +
+  geom_point(mapping = aes(x = log_bill_amt1, y = log_pay_amt1, color = default), 
+             data = train_eda %>% filter(default == 1)) +
+  ggtitle("Payment Amount 1 vs Bill Amount 1", subtitle = " ") +
+  xlab("Bill Amount 1") +
+  ylab("Pay Amountt 1") +
+  ylim(0, 100000) + 
+  custom_theme +
+  theme(legend.position = "right",
+        legend.title = element_blank(),
+        legend.spacing.x = unit(.4, "cm"),
+        legend.key.size = unit(.5, "cm"),
+        axis.title.y = element_text(hjust = .5))
+```
+
+Again, observations which have a transformed billing amount of zero present a challenge. This is dealt with through the logic below.
+
+
+\begin{equation}
+F(x) = 
+\begin{cases} 
+\frac{\log{\text{(Amount Paid)}}}{\log{\text{(Amount Billed)}}} & \text{if } x = 0 \\
+\\
+\frac{\log{\text{(Amount Paid)}}}{\log{(.01)}} & \text{otherwise}
+\end{cases}
+\end{equation}
+
+
+Extra features are also created for the log transformation of the mean billing amount over the six months and the log transformation of the mean payment amount. This is done to provide a more concise representation of the billing and payment info if needed. The logic for the transformation of negative and zero amounts applies to this transformation as well.
+
+Then, looking at the density plots of age by the value of the default value shows that there are age domains that are more likely to contain defaulting observations than others. To potentially reinforce these distinctions, we create indicator variables for the inclusion of an observation in the ranges [0, 27), [27, 40), [40, 55), and [55, inf). 
+
+```{r age_plots}
+ggplot(train_eda) +
+  geom_density(mapping = aes(age, color = default)) +
+  ggtitle("Distribution of Age", subtitle = "") +
+  xlab("Age") +
+  ylab("") +
+  custom_theme +
+  theme(legend.position = "right",
+        legend.title = element_blank(),
+        legend.spacing.x = unit(.4, "cm"),
+        legend.key.size = unit(.5, "cm"))
+```
+
+We use a similar methodology to create indicator variables for high and low pay (divided at $~\$2980$) and for high and low billing limits (divided at $~\$1.25*10^5$). Similar plots for these variables are included in Appendix C.
+
+\pagebreak
+
+## Modeling
+
+```{r real_data, warning = FALSE}
+# Process Train Data for Random Forest
+data <- read_csv("Data/final_train.csv", col_types = "dfffdddddddddddddf") %>%
+  mutate(log_limit_bal = log(limit_bal),
+         log_age = log(age),
+         log_bill_amt1 = ifelse(bill_amt1 > 0, log(bill_amt1), 
+                                ifelse(bill_amt1 == 0, log(.01), -log(abs(bill_amt1)))),
+         log_bill_amt2 = ifelse(bill_amt2 > 0, log(bill_amt2), 
+                                ifelse(bill_amt2 == 0, log(.01), -log(abs(bill_amt2)))),
+         log_bill_amt3 = ifelse(bill_amt3 > 0, log(bill_amt3), 
+                                ifelse(bill_amt3 == 0, log(.01), -log(abs(bill_amt3)))),
+         log_bill_amt4 = ifelse(bill_amt4 > 0, log(bill_amt4), 
+                                ifelse(bill_amt4 == 0, log(.01), -log(abs(bill_amt4)))),
+         log_bill_amt5 = ifelse(bill_amt5 > 0, log(bill_amt5), 
+                                ifelse(bill_amt5 == 0, log(.01), -log(abs(bill_amt5)))),
+         log_bill_amt6 = ifelse(bill_amt6 > 0, log(bill_amt6), 
+                                ifelse(bill_amt6 == 0, log(.01), -log(abs(bill_amt6)))),
+         log_pay_amt1 = ifelse(pay_amt1 != 0, log(pay_amt1), log(.01)),
+         log_pay_amt2 = ifelse(pay_amt2 != 0, log(pay_amt2), log(.01)),
+         log_pay_amt3 = ifelse(pay_amt3 != 0, log(pay_amt3), log(.01)),
+         log_pay_amt4 = ifelse(pay_amt4 != 0, log(pay_amt4), log(.01)),
+         log_pay_amt5 = ifelse(pay_amt5 != 0, log(pay_amt5), log(.01)),
+         log_pay_amt6 = ifelse(pay_amt6 != 0, log(pay_amt6), log(.01))) %>%
+  mutate(perc_paid1 = ifelse(log_bill_amt1 != 0, log_pay_amt1/log_bill_amt1, log_pay_amt1/.01),
+         perc_paid2 = ifelse(log_bill_amt2 != 0, log_pay_amt2/log_bill_amt2, log_pay_amt1/.01),
+         perc_paid3 = ifelse(log_bill_amt3 != 0, log_pay_amt3/log_bill_amt3, log_pay_amt1/.01),
+         perc_paid4 = ifelse(log_bill_amt4 != 0, log_pay_amt4/log_bill_amt4, log_pay_amt1/.01),
+         perc_paid5 = ifelse(log_bill_amt5 != 0, log_pay_amt5/log_bill_amt5, log_pay_amt1/.01),
+         perc_paid6 = ifelse(log_bill_amt6 != 0, log_pay_amt6/log_bill_amt6, log_pay_amt1/.01)) %>%
+  mutate(mean_bill = (bill_amt1+bill_amt2+bill_amt3+bill_amt4+bill_amt5+bill_amt6)/6,
+         mean_pay = (pay_amt1+pay_amt2+pay_amt3+pay_amt4+pay_amt5+pay_amt6)/6) %>%
+  mutate(log_mean_bill = ifelse(mean_bill > 0, log(mean_bill), 
+                                ifelse(mean_bill == 0, log(.01), -log(abs(mean_bill)))),
+         log_mean_pay = ifelse(mean_pay != 0, log(mean_pay), log(.01))) %>%
+  mutate(under_27 = as.factor(ifelse(age < 27, 1, 0)),
+         bw_27_40 = as.factor(ifelse(age >= 27 & age < 40, 1, 0)),
+         bw_40_55 = as.factor(ifelse(age >= 40 & age < 55, 1, 0)),
+         above_55 = as.factor(ifelse(age >= 55, 1, 0))) %>%
+  dplyr::select(-age) %>%
+  mutate(high_pay = as.factor(ifelse(log(mean_pay) >= 8, 1, 0)),
+         low_pay = as.factor(ifelse(log(mean_pay) < 8, 1, 0))) %>%
+  mutate(low_limit = as.factor(ifelse(limit_bal < 1.25e5, 1, 0)),
+         high_limit = as.factor(ifelse(limit_bal >= 1.25e5, 1, 0))) %>%
+  dplyr::select(-mean_bill, -mean_pay) %>%
+  mutate(no_bills = as.factor(ifelse(bill_amt1+bill_amt2+bill_amt3+bill_amt4+bill_amt5+bill_amt6 == 0, 1, 0)),
+         no_pay = as.factor(ifelse(pay_amt1+pay_amt2+pay_amt3+pay_amt4+pay_amt5+pay_amt6 == 0, 1, 0))) %>%
+  dplyr::select(-bill_amt1, -bill_amt2, -bill_amt3, -bill_amt4, -bill_amt5, -bill_amt6,
+                -pay_amt1, -pay_amt2, -pay_amt3, -pay_amt4, -pay_amt5, -pay_amt6)
+
+# Process Compete Data for Random Forest
+compete <- read_csv("Data/final_compete.csv", col_types = "ddfffddddddddddddd") %>%
+  mutate(log_limit_bal = log(limit_bal),
+         log_age = log(age),
+         log_bill_amt1 = ifelse(bill_amt1 > 0, log(bill_amt1), 
+                                ifelse(bill_amt1 == 0, log(.01), -log(abs(bill_amt1)))),
+         log_bill_amt2 = ifelse(bill_amt2 > 0, log(bill_amt2), 
+                                ifelse(bill_amt2 == 0, log(.01), -log(abs(bill_amt2)))),
+         log_bill_amt3 = ifelse(bill_amt3 > 0, log(bill_amt3), 
+                                ifelse(bill_amt3 == 0, log(.01), -log(abs(bill_amt3)))),
+         log_bill_amt4 = ifelse(bill_amt4 > 0, log(bill_amt4), 
+                                ifelse(bill_amt4 == 0, log(.01), -log(abs(bill_amt4)))),
+         log_bill_amt5 = ifelse(bill_amt5 > 0, log(bill_amt5), 
+                                ifelse(bill_amt5 == 0, log(.01), -log(abs(bill_amt5)))),
+         log_bill_amt6 = ifelse(bill_amt6 > 0, log(bill_amt6), 
+                                ifelse(bill_amt6 == 0, log(.01), -log(abs(bill_amt6)))),
+         log_pay_amt1 = ifelse(pay_amt1 != 0, log(pay_amt1), log(.01)),
+         log_pay_amt2 = ifelse(pay_amt2 != 0, log(pay_amt2), log(.01)),
+         log_pay_amt3 = ifelse(pay_amt3 != 0, log(pay_amt3), log(.01)),
+         log_pay_amt4 = ifelse(pay_amt4 != 0, log(pay_amt4), log(.01)),
+         log_pay_amt5 = ifelse(pay_amt5 != 0, log(pay_amt5), log(.01)),
+         log_pay_amt6 = ifelse(pay_amt6 != 0, log(pay_amt6), log(.01))) %>%
+  mutate(perc_paid1 = ifelse(log_bill_amt1 != 0, log_pay_amt1/log_bill_amt1, log_pay_amt1/.01),
+         perc_paid2 = ifelse(log_bill_amt2 != 0, log_pay_amt2/log_bill_amt2, log_pay_amt1/.01),
+         perc_paid3 = ifelse(log_bill_amt3 != 0, log_pay_amt3/log_bill_amt3, log_pay_amt1/.01),
+         perc_paid4 = ifelse(log_bill_amt4 != 0, log_pay_amt4/log_bill_amt4, log_pay_amt1/.01),
+         perc_paid5 = ifelse(log_bill_amt5 != 0, log_pay_amt5/log_bill_amt5, log_pay_amt1/.01),
+         perc_paid6 = ifelse(log_bill_amt6 != 0, log_pay_amt6/log_bill_amt6, log_pay_amt1/.01)) %>%
+  mutate(mean_bill = (bill_amt1+bill_amt2+bill_amt3+bill_amt4+bill_amt5+bill_amt6)/6,
+         mean_pay = (pay_amt1+pay_amt2+pay_amt3+pay_amt4+pay_amt5+pay_amt6)/6) %>%
+  mutate(log_mean_bill = ifelse(mean_bill > 0, log(mean_bill), 
+                                ifelse(mean_bill == 0, log(.01), -log(abs(mean_bill)))),
+         log_mean_pay = ifelse(mean_pay != 0, log(mean_pay), log(.01))) %>%
+  mutate(under_27 = as.factor(ifelse(age < 27, 1, 0)),
+         bw_27_40 = as.factor(ifelse(age >= 27 & age < 40, 1, 0)),
+         bw_40_55 = as.factor(ifelse(age >= 40 & age < 55, 1, 0)),
+         above_55 = as.factor(ifelse(age >= 55, 1, 0))) %>%
+  dplyr::select(-age) %>%
+  mutate(high_pay = as.factor(ifelse(log(mean_pay) >= 8, 1, 0)),
+         low_pay = as.factor(ifelse(log(mean_pay) < 8, 1, 0))) %>%
+  mutate(low_limit = as.factor(ifelse(limit_bal < 1.25e5, 1, 0)),
+         high_limit = as.factor(ifelse(limit_bal >= 1.25e5, 1, 0))) %>%
+  dplyr::select(-mean_bill, -mean_pay) %>%
+  mutate(no_bills = as.factor(ifelse(bill_amt1+bill_amt2+bill_amt3+bill_amt4+bill_amt5+bill_amt6 == 0, 1, 0)),
+         no_pay = as.factor(ifelse(pay_amt1+pay_amt2+pay_amt3+pay_amt4+pay_amt5+pay_amt6 == 0, 1, 0))) %>%
+  dplyr::select(-bill_amt1, -bill_amt2, -bill_amt3, -bill_amt4, -bill_amt5, -bill_amt6,
+                -pay_amt1, -pay_amt2, -pay_amt3, -pay_amt4, -pay_amt5, -pay_amt6)
+
+# Divide up for CV for RF
+train <- data %>%
+  sample_frac(.7)
+test <- data %>%
+  setdiff(train)
+train <- train %>%
+  filter(!is.infinite(perc_paid3))
+test <- test %>%
+  filter(!is.infinite(perc_paid3))
+trainControl <- trainControl(method = "cv", number = 10)
+```
+
+### Random Forest
+
+We first used the `train()` fucntion supplied by the `caret` package to obtain the optimal values for the number of features considered at each split of each tree `m` and the number of trees. This process was fairly computationally expensive, but produced a final model containing 500 trees with $m=2$.
+
+```{r make_rf_model}
+model_final_cv_rf <- randomForest(default ~., data = train, mtry = 2, n.trees = 500)
+pred_final_rf_cv <- predict(model_final_cv_rf, test, type = "prob")
+```
+
+At this point, the log loss is fairly impressive, `r round(log_loss(test, pred_final_rf_cv[,1]),4)` to be exact. Howver, we see that many of the variables created during the data processes are not important to the model (as displayed below). A low importance means that the feature was rarely used to make decisions in the forest because it was not a powerful predictor. However, because of the random nature, these low importance features will still be chosen at times. Removing them may allow more predictive features to be used more often, effectively increasing the power of our model.
+
+```{r plot_importance}
+importance <- as.data.frame(model_final_cv_rf$importance)
+importance <- importance %>%
+  mutate(Var = rownames(importance))
+ggplot(importance[order(importance$MeanDecreaseGini),]) +
+  geom_col(mapping = aes(x = Var, y = MeanDecreaseGini)) +
+  ylab("Mean Decrease in Gini Score") +
+  xlab("Feature") +
+  ggtitle("Variable Importance", subtitle = "") +
+  custom_theme +
+  theme(axis.text.x = element_text(angle = 60, vjust = .5, size = 9))
+```
+
+```{r}
+new_train <- train %>% 
+  dplyr::select(-no_pay, -no_bills, -high_limit, -low_limit, -low_pay, 
+                -high_pay, -above_55, -bw_40_55, -bw_27_40, -under_27)
+model_final_cv_rf2 <- randomForest(default ~., data = new_train, mtry = 2, n.trees = 500) # model 3
+pred_final_rf_cv2 <- predict(model_final_cv_rf2, test, type = "prob")
+```
+
+We remove the lowest variables, rebuild the model with $m = 2$ and $\#\ trees=500$. By doing this, we now obtain a log loss score of `r round(log_loss(test, pred_final_rf_cv2[,1]),4)`.
+
+\pagebreak
+
+## Appendix A 
+
+The following are plots of the variables transformed according to equation (1) before and after the transformation.
+
+```{r set_height, include=FALSE}
+knitr::opts_chunk$set(fig.height = 2)
+```
+
+```{r log_transform_limit_bal, fig.height=1.75}
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = limit_bal), size = 1) +
+  xlab("Limit Balance") +
+  ylab("") +
+  ggtitle("Original Distribution", subtitle = "") +
+  custom_theme
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = log_limit_bal), size = 1) +
+  xlab("Transformed Limit Balance") +
+  ylab("") +
+  ggtitle("Transformed Distribution", subtitle = "") +
+  custom_theme
+```
+
+```{r log_transform_age,fig.height=1.75}
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = age), size = 1) +
+  xlab("Age") +
+  ylab("") +
+  ggtitle("Original Distribution", subtitle = "") +
+  custom_theme
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = log_age), size = 1) +
+  xlab("Transformed Age") +
+  ylab("") +
+  ggtitle("Transformed Distribution", subtitle = "") +
+  custom_theme
+```
+
+
+
+```{r log_transform_bill1}
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = bill_amt1), size = 1) +
+  xlab("Billing Amount 1") +
+  ylab("") +
+  ggtitle("Original Distribution", subtitle = "") +
+  custom_theme
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = log_bill_amt1), size = 1) +
+  xlab("Transformed Billing Amount 1") +
+  ylab("") +
+  ggtitle("Transformed Distribution", subtitle = "") +
+  custom_theme
+```
+
+```{r log_transform_bill2}
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = bill_amt2), size = 1) +
+  xlab("Billing Amount 2") +
+  ylab("") +
+  ggtitle("Original Distribution", subtitle = "") +
+  custom_theme
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = log_bill_amt2), size = 1) +
+  xlab("Transformed Billing Amount 2") +
+  ylab("") +
+  ggtitle("Transformed Distribution", subtitle = "") +
+  custom_theme
+```
+
+
+
+```{r log_transform_bill3}
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = bill_amt3), size = 1) +
+  xlab("Billing Amount 3") +
+  ylab("") +
+  ggtitle("Original Distribution", subtitle = "") +
+  custom_theme
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = log_bill_amt3), size = 1) +
+  xlab("Transformed Billing Amount 3") +
+  ylab("") +
+  ggtitle("Transformed Distribution", subtitle = "") +
+  custom_theme
+```
+
+```{r log_transform_bill4}
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = bill_amt4), size = 1) +
+  xlab("Billing Amount 4") +
+  ylab("") +
+  ggtitle("Original Distribution", subtitle = "") +
+  custom_theme
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = log_bill_amt4), size = 1) +
+  xlab("Transformed Billing Amount 4") +
+  ylab("") +
+  ggtitle("Transformed Distribution", subtitle = "") +
+  custom_theme
+```
+
+
+
+```{r log_transform_bill5}
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = bill_amt5), size = 1) +
+  xlab("Billing Amount 5") +
+  ylab("") +
+  ggtitle("Original Distribution", subtitle = "") +
+  custom_theme
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = log_bill_amt5), size = 1) +
+  xlab("Transformed Billing Amount 5") +
+  ylab("") +
+  ggtitle("Transformed Distribution", subtitle = "") +
+  custom_theme
+```
+
+```{r log_transform_bill6}
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = bill_amt6), size = 1) +
+  xlab("Billing Amount 6") +
+  ylab("") +
+  ggtitle("Original Distribution", subtitle = "") +
+  custom_theme
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = log_bill_amt6), size = 1) +
+  xlab("Transformed Billing Amount 6") +
+  ylab("") +
+  ggtitle("Transformed Distribution", subtitle = "") +
+  custom_theme
+```
+
+
+
+```{r log_transform_pay1}
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = pay_amt1), size = 1) +
+  xlab("Payment Amount 1") +
+  ylab("") +
+  ggtitle("Original Distribution", subtitle = "") +
+  custom_theme
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = log_pay_amt1), size = 1) +
+  xlab("Transformed Payment Amount 1") +
+  ylab("") +
+  ggtitle("Transformed Distribution", subtitle = "") +
+  custom_theme
+```
+
+```{r log_transform_pay2}
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = pay_amt2), size = 1) +
+  xlab("Payment Amount 2") +
+  ylab("") +
+  ggtitle("Original Distribution", subtitle = "") +
+  custom_theme
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = log_pay_amt2), size = 1) +
+  xlab("Transformed Payment Amount 2") +
+  ylab("") +
+  ggtitle("Transformed Distribution", subtitle = "") +
+  custom_theme
+```
+
+
+
+```{r log_transform_pay3}
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = pay_amt3), size = 1) +
+  xlab("Payment Amount 3") +
+  ylab("") +
+  ggtitle("Original Distribution", subtitle = "") +
+  custom_theme
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = log_pay_amt3), size = 1) +
+  xlab("Transformed Payment Amount 3") +
+  ylab("") +
+  ggtitle("Transformed Distribution", subtitle = "") +
+  custom_theme
+```
+
+```{r log_transform_pay4}
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = pay_amt4), size = 1) +
+  xlab("Payment Amount 4") +
+  ylab("") +
+  ggtitle("Original Distribution", subtitle = "") +
+  custom_theme
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = log_pay_amt4), size = 1) +
+  xlab("Transformed Payment Amount 4") +
+  ylab("") +
+  ggtitle("Transformed Distribution", subtitle = "") +
+  custom_theme
+```
+
+
+
+```{r log_transform_pay5}
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = pay_amt5), size = 1) +
+  xlab("Payment Amount 5") +
+  ylab("") +
+  ggtitle("Original Distribution", subtitle = "") +
+  custom_theme
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = log_pay_amt5), size = 1) +
+  xlab("Transformed Payment Amount 5") +
+  ylab("") +
+  ggtitle("Transformed Distribution", subtitle = "") +
+  custom_theme
+```
+
+```{r log_transform_pay6}
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = pay_amt6), size = 1) +
+  xlab("Payment Amount 6") +
+  ylab("") +
+  ggtitle("Original Distribution", subtitle = "") +
+  custom_theme
+ggplot(train_eda) +
+  geom_density(mapping = aes(x = log_pay_amt6), size = 1) +
+  xlab("Transformed Payment Amount 6") +
+  ylab("") +
+  ggtitle("Transformed Distribution", subtitle = "") +
+  custom_theme
+```
+
+## Appendix B
+
+Will be the rest of the log_bill_amount vs log_pay_amount graphs
