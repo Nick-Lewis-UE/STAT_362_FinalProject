@@ -152,9 +152,28 @@ train_pca <- data_pca %>%
 test_pca <- data_pca %>%
   setdiff(train_pca)
 
+train2 <- train %>% 
+  dplyr::select(-log_age, -log_mean_pay, -under_27, -bw_27_40, -bw_40_55, -above_55, -high_pay, -low_limit, -no_bills, -no_pay)
+
 #####################
 # Building the Models
 #####################
+
+
+# Logistic Regression
+model_log <- glm(default ~ ., data = train, family = 'binomial')
+model_log2 <- glm(default ~ ., data = train2, family = 'binomial')
+
+# LDA
+#All-subsets variable selection
+model_subset <- regsubsets(default ~ ., nbest = 3, data = train)
+plot(model_subset)
+#Optimal variables: log_limit_bal, log_bill_amt2, log_bill_amt3, log_pay_amt1, log_pay_amt2)
+#Using optimal variables from all-subsets selection
+model_lda <- lda(default ~ log_limit_bal + log_bill_amt2 + log_bill_amt3 + log_pay_amt1 + log_pay_amt2 , data = train)
+
+# QDA
+model_qda <- qda(default ~ log_limit_bal + log_bill_amt2 + log_bill_amt3 + log_pay_amt1 + log_pay_amt2, data = train)
 
 # Train RF using the Caret package - WARNING: TAKES A LONG TIME
 model_kfold_rf <- train(default ~ ., data = train, trControl = train_control_kfold, method = "rf")
@@ -175,18 +194,28 @@ model_final_cv_rf <- randomForest(default ~., data = new_train, mtry = 2, n.tree
 model_pca_lda <- train(default ~., data = train_pca, method = "lda")
 
 
-# LDA - SAM
-#All-subsets variable selection
-model_subset <- regsubsets(default ~ ., nbest = 3, data = train)
-plot(model_subset)
-#Optimal variables: log_limit_bal, log_bill_amt2, log_bill_amt3, log_pay_amt1, log_pay_amt2)
-#Using optimal variables from all-subsets selection
-model_lda <- lda(default ~ log_limit_bal + log_bill_amt2 + log_bill_amt3 + log_pay_amt1 + log_pay_amt2 , data = train)
 
 
 ###############################
 # Testing the Model and Results
 ###############################
+
+# Make predictions for Logistic Regression
+prob_model_log <- predict(model_log, newdata = test, type = 'response')
+log_loss(test, prob_model_log)
+
+prob_model_log2 <- predict(model_log2, newdata = test, type = 'response')
+log_loss(test, prob_model_log2)
+
+# Make predictions from LDA
+prob_lda <- predict(model_lda, newdata = test)
+prob_lda_prob <- prob_lda$posterior[1:7343]
+log_loss(test, prob_lda_prob)
+
+#Making predictions for QDA
+pred_qda <- predict(model_qda, newdata = test)
+prob_qda <- pred_qda$posterior[1:7343]
+log_loss(test, prob_qda)
 
 # make predictions from CV random forest
 pred_rf_cv <- predict(model_kfold_rf, test, type = "prob")
@@ -200,14 +229,24 @@ log_loss(test, pred_final_rf_cv[,1]) # ~0.455
 pred_pca_lda <- predict(model_pca_lda, test_pca, type = "prob")
 log_loss(test_pca, pred_pca_lda[,1]) # ~0.477
 
-# Make predictions from LDA - SAM
-prob_lda <- predict(model_lda, newdata = test)
-prob_lda_prob <- prob_lda$posterior[1:7343]
-log_loss(test, prob_lda_prob)
 
 ############
 # Deployment
 ############
+
+
+# Deploy for Logistic Regression
+compete_pred_log <- predict(model_log2, compete, type = "response")
+compete_pred_log_final <- data.frame(ID = 1:4326,
+                           probs = compete_pred_log)
+write_csv(compete_pred_log_final, "compete_preds_log.csv")
+
+# Deploy for LDA
+compete_pred_lda <- predict(model_lda, compete, type = "response")
+prob_lda_compete <- compete_pred_lda$posterior[1:4326]
+compete_pred_lda_final <- data.frame(ID = 1:4326,
+                           probs = prob_lda_compete)
+write_csv(compete_pred_lda_final, "compete_preds_2_lda.csv")
 
 # Deploy for Random Forest
 compete_pred <- predict(model_final_cv_rf, compete, type = "prob")[,1]
@@ -215,10 +254,4 @@ compete_pred <- data.frame(ID = 1:length(compete_pred),
                            probs = compete_pred)
 write_csv(compete_pred, "compete_preds_1.csv")
 
-# Deploy for LDA - SAM
-compete_pred_lda <- predict(model_lda, compete, type = "response")
-prob_lda_compete <- compete_pred_lda$posterior[1:4326]
-compete_pred_lda_final <- data.frame(ID = 1:4326,
-                           probs = prob_lda_compete)
-write_csv(compete_pred_lda_final, "compete_preds_2_lda.csv")
 
