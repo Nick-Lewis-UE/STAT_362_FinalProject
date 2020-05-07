@@ -1,17 +1,26 @@
 ---
 title: "Executive Report"
-author: "Nicholas Lewis"
-date: "5/5/2020"
+author: "Nicholas Lewis, Sam Sheth, and Fareena Imamat"
+date: "5/7/2020"
 output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
+# Global Markdown Settings
 knitr::opts_chunk$set(echo = FALSE)
 knitr::opts_chunk$set(fig.height = 3)
+
+# Libraries
 library(tidyverse)
 library(ggthemes)
 library(caret)
 library(randomForest)
+library(plotROC)
+library(AUC)
+library(leaps)
+library(MASS)
+
+# Definitions
 custom_theme <- theme_economist_white() +
   theme(axis.title.x = element_text(face = "bold"),
         axis.title.y = element_text(face = "bold"),
@@ -49,20 +58,23 @@ data_eda <- read_csv("Data/final_train.csv", col_types = "dfffdddddddddddddf") %
          log_pay_amt3 = ifelse(pay_amt3 != 0, log(pay_amt3), log(.01)),
          log_pay_amt4 = ifelse(pay_amt4 != 0, log(pay_amt4), log(.01)),
          log_pay_amt5 = ifelse(pay_amt5 != 0, log(pay_amt5), log(.01)),
-         log_pay_amt6 = ifelse(pay_amt6 != 0, log(pay_amt6), log(.01)))
+         log_pay_amt6 = ifelse(pay_amt6 != 0, log(pay_amt6), log(.01))) %>%
+  mutate(default = as.factor(ifelse(default == 1, "Default", "No Default")))
 train_eda <- data_eda %>%
   dplyr::sample_frac(.7)
 test_eda <- data_eda %>%
   setdiff(train_eda)
 ```
 
-## Introduction
+## Overview
+
+There is always a risk for credit card companies that a particular client defaults on his or her payments. In this study, we examine past bills, past payments, and select demographic characteristics for 24,518 clients. Our goal is to determine the best model that uses these variables to predict the likelihood that clients in a separate dataset will default on payments in the upcoming month, October 2005. We begin by processing and cleaning the data and performing exploratory data analysis in order to get a better sense of the data and examine relationships between variables. Then, we use our cleaned dataset to begin building models. We consider a variety of models with varying degrees of accuracy in predicting defaults, and we ultimately present the following four within this report: logistic regression, linear discriminant analysis (LDA), principal components analysis in LDA, and random forests. Our best performing model is the random forests model, and we are confident that it will be of significant value to credit card companies as they learn more about their clients and work to develop the best possible experience for them. 
 
 ## Data Processing
 
 We first partitioned the data into two distinct sets: a training set and a testing set. The training data was used for all EDA and model building. Reported performance measures were calculated on the testing data.
 
-Exploratory Data Analysis (EDA) and initial modelling attempts quickly illustrate the need for new features and transformation of existing features. First, simple density plots of the features ‘bill_amt1’, …, ‘bill_amt6’, and ‘pay_amt1’, …, ‘pay_amt6’ as well as age and balance limit are clearly not normally distributed. Logarithmic transformations are also taken in order to remedy this issue. There are several cases in which this transformation is problematic, however, since both the billing features and payment features contain zero values and bill amounts may also be negative. A slightly more complex version of this transformation is included below.
+Exploratory Data Analysis (EDA) and initial modelling attempts quickly illustrate the need for new features and the transformation of existing features. First, simple density plots of the features `Billing Amount 1`,..., `Billing Amount 6` and `Payment Amount 1`,..., `Payment Amount 6` as well as `age` and `balance limit` are clearly not normally distributed. Logarithmic transformations are taken in order to remedy this issue. There are several cases in which this transformation is problematic, however, since both the billing features and payment features contain zero values and bill amounts may also be negative. A slightly more complex version of this transformation is detailed below.
 
 \begin{equation}
 F(x) = 
@@ -74,7 +86,7 @@ F(x) =
 \end{equation}
 
 
-The transformation is illustrated graphically below for ‘bill_amt1’. All plots illustrating this transformation are included in Appendix -. It far from a perfect normal distribution even after the transformation, which may present issues with modelling techniques that assume normality.
+The transformation is illustrated graphically below for `Billing Amount 1`. All plots illustrating this transformation are included in Appendix A. The resulting distributions are far from perfectly normal even after the transformation, which may present issues with modelling techniques that assume normality.
 
 
 ```{r log_transform_bill_amt_1, fig.height=3}
@@ -96,12 +108,12 @@ Next, we create variables denoting the percent paid for each month. Intuitively,
 
 ```{r bill_pay_relationship, fig.height=3, warning = FALSE}
 ggplot(train_eda) +
-  geom_point(mapping = aes(x = log_bill_amt1, y = log_pay_amt1, color = default)) +
-  geom_point(mapping = aes(x = log_bill_amt1, y = log_pay_amt1, color = default), 
-             data = train_eda %>% filter(default == 1)) +
+  geom_point(mapping = aes(x = bill_amt1, y = pay_amt1, color = default)) +
+  geom_point(mapping = aes(x = bill_amt1, y = pay_amt1, color = default), 
+             data = train_eda %>% filter(default == "Default")) +
   ggtitle("Payment Amount 1 vs Bill Amount 1", subtitle = " ") +
   xlab("Bill Amount 1") +
-  ylab("Pay Amountt 1") +
+  ylab("Pay Amount 1") +
   ylim(0, 100000) + 
   custom_theme +
   theme(legend.position = "right",
@@ -130,7 +142,7 @@ Then, looking at the density plots of age by the value of the default value show
 
 ```{r age_plots}
 ggplot(train_eda) +
-  geom_density(mapping = aes(age, color = default)) +
+  geom_density(mapping = aes(age, color = default), size = 1.5) +
   ggtitle("Distribution of Age", subtitle = "") +
   xlab("Age") +
   ylab("") +
@@ -256,16 +268,65 @@ test <- test %>%
 trainControl <- trainControl(method = "cv", number = 10)
 ```
 
+### Logistic Regression
+
+### Linear Discriminant Analysis (LDA)
+
+All-subsets variable selection
+
+```{r}
+model_subset <- regsubsets(default ~ ., nbest = 3, data = train)
+plot(model_subset)
+```
+
+Optimal variables: log_limit_bal, log_bill_amt2, log_bill_amt3, log_pay_amt1, log_pay_amt2)
+
+Using optimal variables from all-subsets selection
+```{r}
+model_lda <- lda(default ~ log_limit_bal + log_bill_amt2 + log_bill_amt3 + log_pay_amt1 + log_pay_amt2 , data = train)
+```
+
+### Quadratic Discriminant Analysis (QDA)
+
+### LDA with Principal Component Analysis (PCA)
+
+```{r make_PCA_data}
+pca_data <- read_csv("Data/final_train.csv", col_types = "dfffdddddddddddddf") %>%
+  dplyr::select(bill_amt1, bill_amt2, bill_amt3, bill_amt4, bill_amt5, bill_amt6,
+                pay_amt1, pay_amt2, pay_amt3, pay_amt4, pay_amt5, pay_amt6)
+pca <- prcomp(pca_data, center = TRUE, scale = TRUE) # prcomp() performs PCA
+
+data_pca <- read_csv("Data/final_train.csv", col_types = "dfffdddddddddddddf") %>%
+  cbind(pca$x[,1], pca$x[,2]) %>% # add the PCA features
+  dplyr::select(-bill_amt1, -bill_amt2, -bill_amt3, -bill_amt4, -bill_amt5, -bill_amt6,
+                -pay_amt1, -pay_amt2, -pay_amt3, -pay_amt4, -pay_amt5, -pay_amt6) # remove old features
+
+names(data_pca)[7] <- "comp1" # rename pca column 1
+names(data_pca)[8] <- "comp2" # "               " 2
+train_pca <- data_pca %>%
+  sample_frac(.7)
+test_pca <- data_pca %>%
+  setdiff(train_pca)
+
+model_pca_lda <- train(default ~., data = train_pca, method = "lda")
+pred_pca_lda <- predict(model_pca_lda, test_pca, type = "prob")
+pred_pca_lda_class <- predict(model_pca_lda, test_pca)
+```
+
+We attempt to create an LDA model that utilizes Principal Component Analysis (PCA). We perform PCA on the `bill_amt` family and `pay_amt` family, as originally presented in the data. Because the best subset selection process in the previous LDA model did not select any of the indicator variables created during the data processing stage, we build this LDA model on the PCA components and the original qualitative variables `age`, `sex`, and `education`.
+
+This model produces predictions on the test data with a log loss score of `r round(log_loss(test_pca, pred_pca_lda[,1]), 4)`. However, a closer look at the results reveals that all observations are predicted to not default. This is the same behavior as the trivial model. Therefore, although the log loss is better than the trivial model, it is only because the probabilities are smaller on average. In other words, based off this model we are more confident that all observations will not default. In some sense, that actually makes this model less useful than the trivial model.
+
 ### Random Forest
 
-We first used the `train()` fucntion supplied by the `caret` package to obtain the optimal values for the number of features considered at each split of each tree `m` and the number of trees. This process was fairly computationally expensive, but produced a final model containing 500 trees with $m=2$.
+We first used the `train()` function supplied by the `caret` package to obtain the optimal values for the number of features considered at each split of each tree `m` and the number of trees `B`. This process was fairly computationally expensive, but produced a final model with $m=2$ and $B=500$.
 
 ```{r make_rf_model}
 model_final_cv_rf <- randomForest(default ~., data = train, mtry = 2, n.trees = 500)
 pred_final_rf_cv <- predict(model_final_cv_rf, test, type = "prob")
 ```
 
-At this point, the log loss is fairly impressive, `r round(log_loss(test, pred_final_rf_cv[,1]),4)` to be exact. Howver, we see that many of the variables created during the data processes are not important to the model (as displayed below). A low importance means that the feature was rarely used to make decisions in the forest because it was not a powerful predictor. However, because of the random nature, these low importance features will still be chosen at times. Removing them may allow more predictive features to be used more often, effectively increasing the power of our model.
+At this point, the log loss is fairly impressive, `r round(log_loss(test, pred_final_rf_cv[,1]),4)` to be exact. However, we see that many of the variables created during the data processes are not important to the model (as displayed below). A low importance means that the feature was rarely used to make decisions in the forest because it was not a powerful predictor. However, because of the random nature, these low importance features will still be chosen at times. Removing them may allow more predictive features to be used more often, effectively increasing the power of our model.
 
 ```{r plot_importance}
 importance <- as.data.frame(model_final_cv_rf$importance)
@@ -280,7 +341,7 @@ ggplot(importance[order(importance$MeanDecreaseGini),]) +
   theme(axis.text.x = element_text(angle = 60, vjust = .5, size = 9))
 ```
 
-```{r}
+```{r make_rf_model_2}
 new_train <- train %>% 
   dplyr::select(-no_pay, -no_bills, -high_limit, -low_limit, -low_pay, 
                 -high_pay, -above_55, -bw_40_55, -bw_27_40, -under_27)
@@ -288,7 +349,7 @@ model_final_cv_rf2 <- randomForest(default ~., data = new_train, mtry = 2, n.tre
 pred_final_rf_cv2 <- predict(model_final_cv_rf2, test, type = "prob")
 ```
 
-We remove the lowest variables, rebuild the model with $m = 2$ and $\#\ trees=500$. By doing this, we now obtain a log loss score of `r round(log_loss(test, pred_final_rf_cv2[,1]),4)`.
+We remove the lowest variables, rebuild the model with $m = 2$ and $B=500$. By doing this, we now obtain a log loss score of `r round(log_loss(test, pred_final_rf_cv2[,1]),4)`.
 
 \pagebreak
 
@@ -296,7 +357,7 @@ We remove the lowest variables, rebuild the model with $m = 2$ and $\#\ trees=50
 
 The following are plots of the variables transformed according to equation (1) before and after the transformation.
 
-```{r set_height, include=FALSE}
+```{r set_height_A, include=FALSE}
 knitr::opts_chunk$set(fig.height = 2)
 ```
 
@@ -524,4 +585,165 @@ ggplot(train_eda) +
 
 ## Appendix B
 
-Will be the rest of the log_bill_amount vs log_pay_amount graphs
+Below are the family of graphs visualizing the relationship between the transformed bill amounts and payment amounts.
+
+```{r set_height_B, include=FALSE}
+knitr::opts_chunk$set(fig.height = 2.5)
+```
+
+```{r bill_pay_relationship_1, warning = FALSE}
+ggplot(train_eda) +
+  geom_point(mapping = aes(x = bill_amt1, y = pay_amt1, color = default)) +
+  geom_point(mapping = aes(x = bill_amt1, y = pay_amt1, color = default), 
+             data = train_eda %>% filter(default == "Default")) +
+  ggtitle("Payment Amount 1 vs Bill Amount 1", subtitle = " ") +
+  xlab("Bill Amount 1") +
+  ylab("Pay Amount 1") +
+  ylim(0, 100000) + 
+  custom_theme +
+  theme(legend.position = "right",
+        legend.title = element_blank(),
+        legend.spacing.x = unit(.4, "cm"),
+        legend.key.size = unit(.5, "cm"),
+        axis.title.y = element_text(hjust = .5))
+```
+
+```{r bill_pay_relationship_2, warning = FALSE}
+ggplot(train_eda) +
+  geom_point(mapping = aes(x = bill_amt2, y = pay_amt2, color = default)) +
+  geom_point(mapping = aes(x = bill_amt2, y = pay_amt2, color = default), 
+             data = train_eda %>% filter(default == "Default")) +
+  ggtitle("Payment Amount 2 vs Bill Amount 2", subtitle = " ") +
+  xlab("Bill Amount 2") +
+  ylab("Pay Amount 2") +
+  ylim(0, 100000) + 
+  custom_theme +
+  theme(legend.position = "right",
+        legend.title = element_blank(),
+        legend.spacing.x = unit(.4, "cm"),
+        legend.key.size = unit(.5, "cm"),
+        axis.title.y = element_text(hjust = .5))
+```
+
+```{r bill_pay_relationship_3, warning = FALSE}
+ggplot(train_eda) +
+  geom_point(mapping = aes(x = bill_amt3, y = pay_amt3, color = default)) +
+  geom_point(mapping = aes(x = bill_amt3, y = pay_amt3, color = default), 
+             data = train_eda %>% filter(default == "Default")) +
+  ggtitle("Payment Amount 3 vs Bill Amount 3", subtitle = " ") +
+  xlab("Bill Amount 3") +
+  ylab("Pay Amount 3") +
+  ylim(0, 100000) + 
+  custom_theme +
+  theme(legend.position = "right",
+        legend.title = element_blank(),
+        legend.spacing.x = unit(.4, "cm"),
+        legend.key.size = unit(.5, "cm"),
+        axis.title.y = element_text(hjust = .5))
+```
+
+```{r bill_pay_relationship_4, warning = FALSE}
+ggplot(train_eda) +
+  geom_point(mapping = aes(x = bill_amt4, y = pay_amt4, color = default)) +
+  geom_point(mapping = aes(x = bill_amt4, y = pay_amt4, color = default), 
+             data = train_eda %>% filter(default == "Default")) +
+  ggtitle("Payment Amount 4 vs Bill Amount 4", subtitle = " ") +
+  xlab("Bill Amount 4") +
+  ylab("Pay Amount 4") +
+  ylim(0, 100000) + 
+  custom_theme +
+  theme(legend.position = "right",
+        legend.title = element_blank(),
+        legend.spacing.x = unit(.4, "cm"),
+        legend.key.size = unit(.5, "cm"),
+        axis.title.y = element_text(hjust = .5))
+```
+
+```{r bill_pay_relationship_5, warning = FALSE}
+ggplot(train_eda) +
+  geom_point(mapping = aes(x = bill_amt5, y = pay_amt5, color = default)) +
+  geom_point(mapping = aes(x = bill_amt5, y = pay_amt5, color = default), 
+             data = train_eda %>% filter(default == "Default")) +
+  ggtitle("Payment Amount 5 vs Bill Amount 5", subtitle = " ") +
+  xlab("Bill Amount 5") +
+  ylab("Pay Amount 5") +
+  ylim(0, 100000) + 
+  custom_theme +
+  theme(legend.position = "right",
+        legend.title = element_blank(),
+        legend.spacing.x = unit(.4, "cm"),
+        legend.key.size = unit(.5, "cm"),
+        axis.title.y = element_text(hjust = .5))
+```
+
+```{r bill_pay_relationship_6, warning = FALSE}
+ggplot(train_eda) +
+  geom_point(mapping = aes(x = bill_amt6, y = pay_amt6, color = default)) +
+  geom_point(mapping = aes(x = bill_amt6, y = pay_amt6, color = default), 
+             data = train_eda %>% filter(default == "Default")) +
+  ggtitle("Payment Amount 6 vs Bill Amount 6", subtitle = " ") +
+  xlab("Bill Amount 6") +
+  ylab("Pay Amount 6") +
+  ylim(0, 100000) + 
+  custom_theme +
+  theme(legend.position = "right",
+        legend.title = element_blank(),
+        legend.spacing.x = unit(.4, "cm"),
+        legend.key.size = unit(.5, "cm"),
+        axis.title.y = element_text(hjust = .5))
+```
+
+\pagebreak
+
+## Appendix C
+
+```{r set_height_C, include=FALSE}
+knitr::opts_chunk$set(fig.height = 2)
+```
+
+The following plots support our choices to make indicator variables for certain variables.
+
+Based on the graph below, we made indicators for the ranges [0, 27), [27, 40), [40, 55), and [55, $\infty$).
+
+```{r indicator_age}
+ggplot(train_eda) +
+  geom_density(mapping = aes(age, color = default), size = 1.5) +
+  ggtitle("Distribution of Age", subtitle = "") +
+  xlab("Age") +
+  ylab("") +
+  custom_theme +
+  theme(legend.position = "right",
+        legend.title = element_blank(),
+        legend.spacing.x = unit(.4, "cm"),
+        legend.key.size = unit(.5, "cm"))
+```
+
+Based on the graph below, we made indicators for the ranges of [0,$~\$1.25*10^5$) and [$~\$1.25*10^5$, $\infty$).
+
+```{r indicator_limit_bal}
+ggplot(train_eda) +
+  geom_density(mapping = aes(limit_bal, color = default), size = 1.5) +
+  ggtitle("Distribution of Balance Limit", subtitle = "") +
+  xlab("Balance Limit") +
+  ylab("") +
+  custom_theme +
+  theme(legend.position = "right",
+        legend.title = element_blank(),
+        legend.spacing.x = unit(.4, "cm"),
+        legend.key.size = unit(.5, "cm"))
+```
+
+Based on the graph below, we made indicators for the ranges of [0,8) and [8,$\infty$)
+
+```{r indicator_pay}
+ggplot(train) +
+  geom_density(mapping = aes(log_mean_pay, color = default), size = 1.5) +
+  ggtitle("Distribution of Transformated Mean Pay", subtitle = "") +
+  xlab("Transformated Mean Pay") +
+  ylab("") +
+  custom_theme +
+  theme(legend.position = "right",
+        legend.title = element_blank(),
+        legend.spacing.x = unit(.4, "cm"),
+        legend.key.size = unit(.5, "cm"))
+```
