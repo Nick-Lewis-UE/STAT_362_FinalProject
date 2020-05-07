@@ -1,5 +1,5 @@
 ---
-title: "Executive Report"
+title: "Predicting Payment Default"
 author: "Nicholas Lewis, Sam Sheth, and Fareena Imamat"
 date: "5/7/2020"
 output: pdf_document
@@ -67,18 +67,18 @@ test_eda <- data_eda %>%
   setdiff(train_eda)
 ```
 
-## Overview
+# Overview
 
-There is always a risk for credit card companies that a particular client defaults on his or her payments. In this study, we examine past bills, past payments, and select demographic characteristics for 24,518 clients. Our goal is to determine the best model that uses these variables to predict the likelihood that clients in a separate dataset will default on payments in the upcoming month, October 2005. We begin by processing and cleaning the data and performing exploratory data analysis in order to get a better sense of the data and examine relationships between variables. Then, we use our cleaned dataset to begin building models. We consider a variety of models with varying degrees of accuracy in predicting defaults, and we ultimately present the following four within this report: logistic regression, linear discriminant analysis (LDA), principal components analysis in LDA, and random forests. Our best performing model is the random forests model, and we are confident that it will be of significant value to credit card companies as they learn more about their clients and work to develop the best possible experience for them. 
+There is always a risk for credit card companies that a particular client defaults on his or her payments. In this study, we examine past bills, past payments, and select demographic characteristics for 24,518 clients. Our goal is to determine the best model that uses these variables to predict the likelihood that clients in a separate dataset will default on payments in the upcoming month, October 2005. We begin by processing and cleaning the data and performing exploratory data analysis in order to get a better sense of the data and examine relationships between variables. Then, we use our cleaned dataset to begin building models. We consider a variety of models with varying degrees of accuracy in predicting defaults, and we ultimately present the following five within this report: logistic regression, linear discriminant analysis (LDA), quadratic discriminant analysis (QDA), principal components analysis in LDA, and random forests. Our best performing model is the random forests model, and we are confident that it will be of significant value to credit card companies as they learn more about their clients and work to develop the best possible experience for them. 
 
-## Data Processing
+# Data Processing
 
 We first partitioned the data into two distinct sets: a training set and a testing set. The training data was used for all EDA and model building. Reported performance measures were calculated on the testing data.
 
 Exploratory Data Analysis (EDA) and initial modelling attempts quickly illustrate the need for new features and the transformation of existing features. First, simple density plots of the features `Billing Amount 1`,..., `Billing Amount 6` and `Payment Amount 1`,..., `Payment Amount 6` as well as `age` and `balance limit` are clearly not normally distributed. Logarithmic transformations are taken in order to remedy this issue. There are several cases in which this transformation is problematic, however, since both the billing features and payment features contain zero values and bill amounts may also be negative. A slightly more complex version of this transformation is detailed below.
 
 \begin{equation}
-F(x) = 
+\text{Transformed Value} =
 \begin{cases} 
 \log{(x)} & \text{if } x > 0 \\
 \log{.01} & \text{if } x = 0 \\
@@ -91,13 +91,16 @@ F(x) =
 The transformation is illustrated graphically below for `Billing Amount 1`. All plots illustrating this transformation are included in Appendix A. The resulting distributions are far from perfectly normal even after the transformation, which may present issues with modelling techniques that assume normality.
 
 
-```{r log_transform_bill_amt_1, fig.height=3}
+```{r density_bill_amt_1, fig.height=2}
 ggplot(train_eda) +
   geom_density(mapping = aes(x = bill_amt1), size = 1) +
   xlab("Billing Amount 1") +
   ylab("") +
   ggtitle("Original Distribution", subtitle = "") +
   custom_theme
+```
+
+```{r density_log_bill_amt_1, fig.height=2}
 ggplot(train_eda) +
   geom_density(mapping = aes(x = log_bill_amt1), size = 1) +
   xlab("Transformed Billing Amount 1") +
@@ -125,11 +128,13 @@ ggplot(train_eda) +
         axis.title.y = element_text(hjust = .5))
 ```
 
+\pagebreak
+
 Again, observations which have a transformed billing amount of zero present a challenge. This is dealt with through the logic below.
 
 
 \begin{equation}
-F(x) = 
+\text{Percent Paid} =
 \begin{cases} 
 \frac{\log{\text{(Amount Paid)}}}{\log{\text{(Amount Billed)}}} & \text{if } x = 0 \\
 \\
@@ -155,11 +160,10 @@ ggplot(train_eda) +
         legend.key.size = unit(.5, "cm"))
 ```
 
-We use a similar methodology to create indicator variables for high and low pay (divided at $~\$2980$) and for high and low billing limits (divided at $~\$1.25*10^5$). Similar plots for these variables are included in Appendix C.
+We use a similar methodology to create indicator variables for high and low pay (divided at $~\$2980$) and for high and low billing limits (divided at $~\$1.25*10^5$). Similar plots for these variables are included in Appendix C. This concludes our data processing.
 
-\pagebreak
 
-## Modeling
+# Modeling
 
 ```{r real_data, warning = FALSE}
 # Process Train Data for Random Forest
@@ -270,35 +274,22 @@ test <- test %>%
 trainControl <- trainControl(method = "cv", number = 10)
 ```
 
+We will now look at the processes of building and testing our models. We will use the log loss score as our primary measure of accuracy. The log loss function garners its fame for its use as an evaluation metric in Kaggle. The goal is to effectively minimize the Log Loss for greater success. Log loss quantifies the accuracy of a classifier by penalizing all false classifications. Essentially, the minimization results in a boost in accuracy. The log loss calculation hinges upon the classifier assigning a probability to each class rather than yielding the most likely class. The log loss was adopted into a function for the purposes of repetitive use in the project.  
+
 ### Logistic Regression
 
 The default variable is a binary, categorical variable, with the two categories being “defaulting” or “not defaulting.” We begin our modeling process by considering the logistic model, which will consider the predictor variables for a client and report the probability that the response variable (default) falls into a particular class (“defaulting” or “not defaulting”). The probability outputted is the probability of “defaulting” from which we can determine the probability of “not defaulting” since the probabilities must add up to 1. If the provided probability of defaulting is greater than 0.5, we predict that the corresponding client will default (“yes”). Otherwise, we predict that the client will not default (“no”). 
 
-From our initial attempt at logistic regression, we learn that only 19 of our 36 predictor variables are significant in predicting default in this model (Appendix D). An important observation is that of the "percentage paid" variables, only perc_paid1, the percentage of the bill paid in September (the month right before the one we are interested in), is significant. This supports our initial view that since many people live paycheck to paycheck, there is uncertainty from month to month when it comes to defaults, so only the month closest to our focus (October) could be significant in predicting the probability of default. However, the amount paid in each month prior to October is significant. However, since the amount paid relative to the bill amount is not significant in all but September, we suspect that there is a confounding variable that is unaccounted for: expenses paid in cash to lower the bill amount and avoid worsening limit_bal (credit).
+From our initial attempt at logistic regression, we learn that only 19 of our 36 predictor variables are significant in predicting default in this model. An important observation is that of the "percentage paid" variables, only Percentage Paid 1, the percentage of the bill paid in September (the month right before the one we are interested in), is significant. This supports our initial view that since many people live paycheck to paycheck, there is uncertainty from month to month when it comes to defaults, so only the month closest to our focus (October) could be significant in predicting the probability of default. However, the amount paid in each month prior to October is significant. Since the amount paid relative to the bill amount is not significant in all but September, we suspect that there is a confounding variable that is unaccounted for: expenses paid in cash to lower the bill amount and avoid worsening limit_bal (credit).
 
-The “age” variable is also not significant. This makes sense because financial insecurity affects people of all ages. There are plenty of younger people who are richer than older people, and vice versa, so age is not helpful in predicting defaults. This initial model results in a log-loss of 1.83967, so we run a new logistic regression model with only the significant variables included, but we only improve the log-loss to 1.617169. The logistic regression models we developed provided useful information on the significance of our predictor variables. However, they did not perform well, likely because they are still considering too many predictor variables, so we now move on to linear discriminant analysis of our data.
+The “age” variable is also not significant. This makes sense because financial insecurity affects people of all ages. There are plenty of younger people who are richer than older people, and vice versa, so age is not helpful in predicting defaults. This initial model results in a log-loss of 1.8396, so we run a new logistic regression model with only the significant variables included, but we only improve the log-loss to 1.6171. The logistic regression models we developed provided useful information on the significance of our predictor variables. However, they did not perform well, likely because they are still considering too many predictor variables, so we now move on to linear discriminant analysis of our data.
 
 
 ### Linear Discriminant Analysis (LDA)
 
-Since we suspect that we are utilizing too many variables, we begin by implementing variable selection procedures (Appendix 2). We attempt to perform forward, backward, and mixed selection using the stepAIC function, but stepAIC would not work because the AIC is negative infinity for our model. This means that stepAIC would lead to overfitted models, which is why the function would not run properly. We try the all-subsets selection procedure, which is successful in returning the following variables as significant: log_limit_bal, log_bill_amt2, log_bill_amt3, log_pay_amt1, and log_pay_amt2. This selection provides further evidence that months closest to October are important in predicting if a client will default. The 1, 2, and 3, in these variables refers to September, August, and July. Now that we have narrowed our significant variables from 19 to 5, we move forward with linear discriminant analysis. 
+Since we suspect that we are utilizing too many variables, we begin by implementing variable selection procedures (Appendix D). We attempt to perform forward, backward, and mixed selection using the `stepAIC` function, but `stepAIC` will not work because the AIC is negative infinity for our model. This means that `stepAIC` would lead to over-fitted models, which is why the function would not run properly. We try the all-subsets selection procedure, which is successful in returning the following variables as significant: Transformed Balance Limit, Transformed Bill Amount 2, Transformed Bill Amount 3, Transformed Pay Amount 1, and Transformed Pay Amount 2. This selection provides further evidence that months closest to October are important in predicting if a client will default. The 1, 2, and 3, in these variables refers to September, August, and July. Now that we have narrowed our significant variables from 19 to 5, we move forward with linear discriminant analysis. 
 
-Linear discriminant analysis (LDA) is apt in pattern recognition. It finds a linear combination of variables that separates our two classes (“defaulting” and “not defaulting”) in order to make the best predictions. This method of developing a predictive model resulted in a log-loss of 0.4656489, which is much better than the log-loss of 1.617169 that we got from logistic regression.
-
-
-All-subsets variable selection
-
-```{r}
-model_subset <- regsubsets(default ~ ., nbest = 3, data = train)
-plot(model_subset)
-```
-
-Optimal variables: log_limit_bal, log_bill_amt2, log_bill_amt3, log_pay_amt1, log_pay_amt2)
-
-Using optimal variables from all-subsets selection
-```{r}
-model_lda <- lda(default ~ log_limit_bal + log_bill_amt2 + log_bill_amt3 + log_pay_amt1 + log_pay_amt2 , data = train)
-```
+Linear discriminant analysis (LDA) is apt in pattern recognition. It finds a linear combination of variables that separates our two classes (“defaulting” and “not defaulting”) in order to make the best predictions. This method of developing a predictive model resulted in a log-loss of 0.4656, which is much better than the log-loss of 1.6171 that we got from logistic regression.
 
 ### Quadratic Discriminant Analysis (QDA)
 
@@ -329,11 +320,13 @@ pred_pca_lda <- predict(model_pca_lda, test_pca, type = "prob")
 pred_pca_lda_class <- predict(model_pca_lda, test_pca)
 ```
 
-We now attempt to create an LDA model that utilizes Principal Component Analysis (PCA). More information is available on PCA in Appendix -.We perform PCA on the `bill_amt` family and `pay_amt` family, as originally presented in the data. Because the best subset selection process in the previous LDA model did not select any of the indicator variables created during the data processing stage, we build this LDA model on the PCA components and the original qualitative variables `age`, `sex`, and `education`.
+We now attempt to create an LDA model that utilizes Principal Component Analysis (PCA). More information is available on PCA in Appendix E. We perform PCA on the `bill_amt` family and `pay_amt` family, as originally presented in the data. Because the best subset selection process in the previous LDA model did not select any of the indicator variables created during the data processing stage, we build this LDA model on the PCA components and the original qualitative variables `age`, `sex`, and `education`.
 
-This model produces predictions on the test data with a log loss score of `r round(log_loss(test_pca, pred_pca_lda[,1]), 4)`. However, a closer look at the results reveals that all observations are predicted to not default. This is the same behavior as the trivial model. Therefore, although the log loss is better than the trivial model, it is only because the probabilities are smaller on average. In other words, based off this model we are more confident that all observations will not default. In some sense, that actually makes this model less useful than the trivial model.
+This model produces predictions on the test data with a log loss score of `r round(log_loss(test_pca, pred_pca_lda[,1]), 4)`. However, a closer look at the results reveals that all observations are predicted to not default. This is the same behavior as the trivial model. Therefore, although the log loss is better than the trivial model, it is only because the probabilities are smaller on average. In other words, based off this model we are more confident that all observations will not default. In some sense, that actually makes this model less useful than the trivial model. Because we appear to have reached the limits the LDA/QDA methodology, we move on to explore a very different technique: random forest.
 
 ### Random Forest
+
+Random forest is a non-parametric approach, and is therefore very different from the prior methods. More information on the random forest technique can be found in Appendix F.
 
 We first used the `train()` function supplied by the `caret` package to obtain the optimal values for the number of features considered at each split of each tree `m` and the number of trees `B`. This process was fairly computationally expensive, but produced a final model with $m=2$ and $B=500$.
 
@@ -347,7 +340,16 @@ At this point, the log loss is fairly impressive, `r round(log_loss(test, pred_f
 ```{r plot_importance}
 importance <- as.data.frame(model_final_cv_rf$importance)
 importance <- importance %>%
-  mutate(Var = rownames(importance))
+  mutate(Var = c("Above 55", "B/w 27 & 40", "B/w 40 & 55", "Education", "High Balance Limit",
+                 "High Mean Pay", "Balance Limit", "log(Age)", "log(Bill Amount 1)",
+                 "log(Bill Amount 2)", "log(Bill Amount 3)", "log(Bill Amount 4)",
+                 "log(Bill Amount 5)", "log(Bill Amount 6)", "log(Balance Limit)",
+                 "log(Mean Bill)", "log(Mean Payment)","log(Pay Amount 1)", 
+                 "log(Pay Amount 2)", "log(Pay Amount 3)", "log(Pay Amount 4)",
+                "log(Pay Amount 5)", "log(Pay Amount 6)", "Low Balance Limit",
+                "Low Mean Pay", "Marriage", "No Bills", "No Payments", "Percent Paid 1", 
+                "Percent Paid 2", "Percent Paid 3", "Percent Paid 4", "Percent Paid 5", 
+                "Percent Paid 6", "Sex", "Under 27"))
 ggplot(importance[order(importance$MeanDecreaseGini),]) +
   geom_col(mapping = aes(x = Var, y = MeanDecreaseGini)) +
   ylab("Mean Decrease in Gini Score") +
@@ -367,9 +369,16 @@ pred_final_rf_cv2 <- predict(model_final_cv_rf2, test, type = "prob")
 
 We remove the lowest variables, rebuild the model with $m = 2$ and $B=500$. By doing this, we now obtain a log loss score of `r round(log_loss(test, pred_final_rf_cv2[,1]),4)`.
 
+# Conclusion
+
+After completing this analysis, many of the modelling techniques did not produce a good fit, however LDA and random forest were able to produce impressive models. Random forest has achieved the best log loss score and is therefore the best model we are able to achieve within the scope of this project. The overall accuracy (ie misclassification rate) for all our models is relatively the same, but we are most confident in the predictions of the random forest model, based on the log loss score. The performance of this model on more data solidifies this conclusion, producing a log loss of .4437.
+
+The team’s next step is to delve more into different machine learning techniques. This includes Neural Networks and Generalized Additive Models (GAMs). Neural Networks is a powerful set of algorithms that perform computations similar to neurons in the human brain. In contrast, GAMs are highly effective in instances where the relationship between the features and y is not linear. It would be worthwhile to see the results that we achieve from implementing these algorithms. Secondly, we would put a request in to banks for more data sets. It would be helpful in improving model performance as most of the techniques such as Boosting and Random Forests are very sensitive to the amount of data. 
+
 \pagebreak
 
-## Appendix A 
+# Appendices
+## Appendix A: Transformations 
 
 The following are plots of the variables transformed according to equation (1) before and after the transformation.
 
@@ -599,7 +608,7 @@ ggplot(train_eda) +
   custom_theme
 ```
 
-## Appendix B
+## Appendix B: Percent Paid Feature Creation
 
 Below are the family of graphs visualizing the relationship between the transformed bill amounts and payment amounts.
 
@@ -711,7 +720,7 @@ ggplot(train_eda) +
 
 \pagebreak
 
-## Appendix C
+### Appendix C: Indicator Variable Creation
 
 ```{r set_height_C, include=FALSE}
 knitr::opts_chunk$set(fig.height = 2)
@@ -754,8 +763,8 @@ Based on the graph below, we made indicators for the ranges of [0,8) and [8,$\in
 ```{r indicator_pay}
 ggplot(train) +
   geom_density(mapping = aes(log_mean_pay, color = default), size = 1.5) +
-  ggtitle("Distribution of Transformated Mean Pay", subtitle = "") +
-  xlab("Transformated Mean Pay") +
+  ggtitle("Distribution of Transformed Mean Pay", subtitle = "") +
+  xlab("Transformed Mean Pay") +
   ylab("") +
   custom_theme +
   theme(legend.position = "right",
@@ -764,17 +773,26 @@ ggplot(train) +
         legend.key.size = unit(.5, "cm"))
 ```
 
-## Appendix -: Principal Component Analysis (PCA)
+### Appendix D: Variable Selection
 
-Principle Component Analysis (PCA) is an unsupervised dimension reduction technique. We look at the features in question and seek to create a number of linear combinations of these features. Of course, the number of combinations must be less than the number of original features. These combinations are refered to as components.
+We can use All-Subset Selection to determine the most influential variables. The 3 best models with each number of variables included (1...p) are recorded, and displayed by BIC score below.
+
+```{r fig.height=5, warning = FALSE, message = FALSE}
+model_subset <- regsubsets(default ~ ., nbest = 3, data = train)
+plot(model_subset)
+```
+
+### Appendix E: Principal Component Analysis (PCA)
+
+Principle Component Analysis (PCA) is an unsupervised dimension reduction technique. We look at the features in question and seek to create a number of linear combinations of these features. Of course, the number of combinations must be less than the number of original features. These combinations are referred to as components.
 
 In PCA, we use calculus to maximize the variance of these components, placing constraints on the coefficients of each term of the linear combination to ensure that a maximum can be found. In a small example with just two features, we would maximize $\phi_1V_1+\phi_2V_2 \text{ where } \phi_1^2+\phi_2^2=1$. 
 
 After completing this dimension reduction, we can implement another modelling technique using the components as features in the model.
 
-## Appendix -:Random Forest
+### Appendix F: Random Forest
 
-To understand the Random Forest modeling technique, we will first explore the idea of a decision tree. A decision tree repeatedly splits the data systematically in an attempt to isolate groups of observations into regions. If a new observation is located within a specific region, it will be classified as the mode response for that region. These are refered to as trees because the can be visualized as such. Below is a small example. 
+To understand the Random Forest modeling technique, we will first explore the idea of a decision tree. A decision tree repeatedly splits the data systematically in an attempt to isolate groups of observations into regions. If a new observation is located within a specific region, it will be classified as the mode response for that region. These are referred to as trees because the can be visualized as such. Below is a small example. 
 
 ```{r tree, fig.height = 4, fig.align= "center"}
 tree <- tree(default ~ ., data = train)
@@ -782,6 +800,28 @@ plot(tree)
 text(tree, pretty = 0)
 ```
 
-We can follow the path of a new observation through, asking first if it has a balance limit of less than $145,000, then the corresponding question for the correct branch. Notice here that all regions predict observations as 0 (no default). This shows anecdotely the reason why trees are not very accurate.
+We can follow the path of a new observation through, asking first if it has a balance limit of less than $145,000, then the corresponding question for the correct branch. Notice here that all regions predict observations as 0 (no default). This shows anecdotal evidence as to why the reason why trees are not very accurate.
 
-However, random forest creates a large number of these trees and averages the predictions made by each tree to reach a final prediction value. In order to ensure that each tree is created differently, it only considers `m` random variables at each split in the tree, hence the the term Random Forest.
+However, random forest creates a large number of these trees and averages the predictions made by each tree to reach a final prediction value. In order to ensure that each tree is created differently, it only considers `m` random variables at each split in the tree, hence the the term Random Forest.  
+
+### Appendix G: Variable List  
+
+The following variables were originally given.  
+
+* limit_bal: Amount of given credit in dollars, including individual and family/supplementary credit  
+* sex: Gender (1=male, 2=female)  
+* education: (1=graduate school, 2=university, 3=high school, 4=others)  
+* marriage: Marital status (1=married, 2=single, 3=others)  
+* age: Age in years  
+* bill_amt1: Amount of bill statement in September, 2005 (dollars)  
+* bill_amt2: Amount of bill statement in August, 2005 (dollars)  
+* bill_amt3: Amount of bill statement in July, 2005 (dollars)  
+* bill_amt4: Amount of bill statement in June, 2005 (dollars)  
+* bill_amt5: Amount of bill statement in May, 2005 (dollars)  
+* bill_amt6: Amount of bill statement in April, 2005 (dollars)  
+* pay_amt1: Amount of previous payment in September, 2005 (dollars)  
+* pay_amt2: Amount of previous payment in August, 2005 (dollars)  
+* pay_amt3: Amount of previous payment in July, 2005 (dollars)  
+* pay_amt4: Amount of previous payment in June, 2005 (dollars)  
+* pay_amt5: Amount of previous payment in May, 2005 (dollars)  
+* pay_amt6: Amount of previous payment in April, 2005 (dollars)   
