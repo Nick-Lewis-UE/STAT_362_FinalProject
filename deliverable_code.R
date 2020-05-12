@@ -1,3 +1,5 @@
+# Nick Lewis, Sam Sheth, and Fareena Imamat
+
 ##########
 # Preamble
 ##########
@@ -123,7 +125,7 @@ compete <- read_csv("Data/final_compete.csv", col_types = "ddfffddddddddddddd") 
   dplyr::select(-bill_amt1, -bill_amt2, -bill_amt3, -bill_amt4, -bill_amt5, -bill_amt6,
                 -pay_amt1, -pay_amt2, -pay_amt3, -pay_amt4, -pay_amt5, -pay_amt6)
 
-# Divide up for CV for RF
+# Divide into training and testing
 train <- data %>%
   sample_frac(.7)
 test <- data %>%
@@ -152,6 +154,19 @@ train_pca <- data_pca %>%
 test_pca <- data_pca %>%
   setdiff(train_pca)
 
+pca_compete <- read_csv("Data/final_compete.csv", col_types = "ddfffddddddddddddd") %>%
+  dplyr::select(bill_amt1, bill_amt2, bill_amt3, bill_amt4, bill_amt5, bill_amt6,
+                pay_amt1, pay_amt2, pay_amt3, pay_amt4, pay_amt5, pay_amt6)
+pca_c <- prcomp(pca_compete, center = TRUE, scale = TRUE) # prcomp() performs PCA
+
+compete_pca <- read_csv("Data/final_compete.csv", col_types = "ddfffddddddddddddd") %>%
+  cbind(pca_c$x[,1], pca_c$x[,2]) %>% # add the PCA features
+  dplyr::select(-bill_amt1, -bill_amt2, -bill_amt3, -bill_amt4, -bill_amt5, -bill_amt6,
+                -pay_amt1, -pay_amt2, -pay_amt3, -pay_amt4, -pay_amt5, -pay_amt6) # remove old features
+
+names(compete_pca)[7] <- "comp1" # rename pca column 1
+names(compete_pca)[8] <- "comp2" # "               " 2
+
 train2 <- train %>% 
   dplyr::select(-log_age, -log_mean_pay, -under_27, -bw_27_40, -bw_40_55, -above_55, -high_pay, -low_limit, -no_bills, -no_pay)
 
@@ -165,33 +180,30 @@ model_log <- glm(default ~ ., data = train, family = 'binomial')
 model_log2 <- glm(default ~ ., data = train2, family = 'binomial')
 
 # LDA
-#All-subsets variable selection
-model_subset <- regsubsets(default ~ ., nbest = 3, data = train)
-plot(model_subset)
-#Optimal variables: log_limit_bal, log_bill_amt2, log_bill_amt3, log_pay_amt1, log_pay_amt2)
-#Using optimal variables from all-subsets selection
-model_lda <- lda(default ~ log_limit_bal + log_bill_amt2 + log_bill_amt3 + log_pay_amt1 + log_pay_amt2 , data = train)
+model_subset <- regsubsets(default ~ ., nbest = 3, data = train) # All-subsets variable selection
+plot(model_subset) # Optimal variables: log_limit_bal, 
+                   # log_bill_amt2, log_bill_amt3, log_pay_amt1, log_pay_amt2)
+model_lda <- lda(default ~ log_limit_bal + log_bill_amt2 + 
+                   log_bill_amt3 + log_pay_amt1 + 
+                   log_pay_amt2 , data = train) #Using optimal variables from all-subsets selection
 
 # QDA
-model_qda <- qda(default ~ log_limit_bal + log_bill_amt2 + log_bill_amt3 + log_pay_amt1 + log_pay_amt2, data = train)
+model_qda <- qda(default ~ log_limit_bal + log_bill_amt2 + 
+                   log_bill_amt3 + log_pay_amt1 + log_pay_amt2, data = train)
 
-# Train RF using the Caret package - WARNING: TAKES A LONG TIME
-model_kfold_rf <- train(default ~ ., data = train, trControl = train_control_kfold, method = "rf")
+# PCA LDA
+model_pca_lda <- train(default ~., data = train_pca, method = "lda")
 
-# Extract final model and note the build
+# RF 
+model_kfold_rf <- train(default ~ ., data = train, 
+                        trControl = train_control_kfold, method = "rf") # WARNING: TAKES A LONG TIME
 model_kfold_rf$finalModel # mtry = 2, n.trees = 500
-
-# Reproduce this model for the sake of time
-model_final_cv_rf <- randomForest(default ~., data = train, mtry = 2, n.trees = 500) # model 1
-
-# Remove the low importance variables
+model_final_cv_rf <- randomForest(default ~., # Reproduce this model for the sake of time
+                                  data = train, mtry = 2, n.trees = 500) # model 1
 new_train <- train %>% 
   dplyr::select(-no_pay, -no_bills, -high_limit, -low_limit, -low_pay, 
-                -high_pay, -above_55, -bw_40_55, -bw_27_40, -under_27)
+                -high_pay, -above_55, -bw_40_55, -bw_27_40, -under_27) # Remove the low importance variables
 model_final_cv_rf <- randomForest(default ~., data = new_train, mtry = 2, n.trees = 500) # model 3
-
-# Train LDA using the Caret package and PCA data
-model_pca_lda <- train(default ~., data = train_pca, method = "lda")
 
 
 
@@ -212,22 +224,22 @@ prob_lda <- predict(model_lda, newdata = test)
 prob_lda_prob <- prob_lda$posterior[1:7343]
 log_loss(test, prob_lda_prob)
 
-#Making predictions for QDA
+# Make predictions for QDA
 pred_qda <- predict(model_qda, newdata = test)
 prob_qda <- pred_qda$posterior[1:7343]
 log_loss(test, prob_qda)
 
-# make predictions from CV random forest
-pred_rf_cv <- predict(model_kfold_rf, test, type = "prob")
-log_loss(test, pred_rf_cv[,1]) # ~0.455
-
-# make predictions from RF final model extraction
-pred_final_rf_cv <- predict(model_final_cv_rf, test, type = "prob")
-log_loss(test, pred_final_rf_cv[,1]) # ~0.455
-
 # Make predictions from the CV PCA LDA
 pred_pca_lda <- predict(model_pca_lda, test_pca, type = "prob")
-log_loss(test_pca, pred_pca_lda[,1]) # ~0.477
+log_loss(test_pca, pred_pca_lda[,1]) 
+
+# Make predictions from CV random forest
+pred_rf_cv <- predict(model_kfold_rf, test, type = "prob")
+log_loss(test, pred_rf_cv[,1])
+
+# Make predictions from RF final model extraction
+pred_final_rf_cv <- predict(model_final_cv_rf, test, type = "prob")
+log_loss(test, pred_final_rf_cv[,1])
 
 
 ############
@@ -247,6 +259,12 @@ prob_lda_compete <- compete_pred_lda$posterior[1:4326]
 compete_pred_lda_final <- data.frame(ID = 1:4326,
                            probs = prob_lda_compete)
 write_csv(compete_pred_lda_final, "compete_preds_2_lda.csv")
+
+# Deploy for PCA
+compete_pred_pca_lda <- predict(model_pca_lda, compete_pca, type = "prob")
+compete_pred_pca_lda <- data.frame(ID = 1:4326,
+                                   probs = compete_pred_pca_lda[,1])
+write_csv(compete_pred_pca_lda, "compete_preds_4_lda.csv")
 
 # Deploy for Random Forest
 compete_pred <- predict(model_final_cv_rf, compete, type = "prob")[,1]
